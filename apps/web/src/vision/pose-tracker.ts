@@ -19,6 +19,7 @@ export class PoseTracker {
     private readonly video: HTMLVideoElement,
     private readonly onPose: (sample: PoseSample) => void,
     private readonly onError: (message: string) => void,
+    private readonly numPoses: 1 | 2 = 1,
   ) {}
 
   async start(): Promise<void> {
@@ -49,6 +50,7 @@ export class PoseTracker {
         type: 'init',
         wasmUrl: new URL(`${import.meta.env.BASE_URL}wasm/`, window.location.href).href,
         modelUrl: new URL(`${import.meta.env.BASE_URL}models/pose_landmarker_lite.task`, window.location.href).href,
+        numPoses: this.numPoses,
       });
     });
     this.readyPromise = workerReady;

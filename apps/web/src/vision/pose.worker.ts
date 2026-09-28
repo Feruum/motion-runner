@@ -7,10 +7,10 @@
  * frames with one request in flight, and a GPU-to-CPU initialization fallback.
  */
 import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision';
-import type { Landmark, PoseSample } from '@motion-runner/game';
+import { poseResultToSample } from './pose-sample';
 
 type WorkerRequest =
-  | { type: 'init'; wasmUrl: string; modelUrl: string }
+  | { type: 'init'; wasmUrl: string; modelUrl: string; numPoses?: 1 | 2 }
   | { type: 'frame'; bitmap: ImageBitmap; timestampMs: number }
   | { type: 'dispose' };
 
@@ -29,13 +29,13 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       try {
         landmarker = await PoseLandmarker.createFromOptions(vision, {
           baseOptions: { modelAssetPath: message.modelUrl, delegate: 'GPU' },
-          runningMode: 'VIDEO', numPoses: 1, outputSegmentationMasks: false,
+          runningMode: 'VIDEO', numPoses: message.numPoses ?? 1, outputSegmentationMasks: false,
         });
       } catch (gpuError) {
         console.warn('GPU pose delegate unavailable; using CPU.', gpuError);
         landmarker = await PoseLandmarker.createFromOptions(vision, {
           baseOptions: { modelAssetPath: message.modelUrl, delegate: 'CPU' },
-          runningMode: 'VIDEO', numPoses: 1, outputSegmentationMasks: false,
+          runningMode: 'VIDEO', numPoses: message.numPoses ?? 1, outputSegmentationMasks: false,
         });
       }
       self.postMessage({ type: 'ready' });
@@ -50,16 +50,12 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   }
   try {
     const result = landmarker.detectForVideo(message.bitmap, message.timestampMs);
-    const landmarks: Landmark[] = (result.landmarks[0] ?? []).map(point => ({
-      x: point.x, y: point.y, z: point.z,
-      visibility: point.visibility ?? 0, presence: 1,
-    }));
-    const sample: PoseSample = {
+    const sample = poseResultToSample({
       timestampMs: message.timestampMs,
       frameWidth: message.bitmap.width,
       frameHeight: message.bitmap.height,
-      landmarks,
-    };
+      landmarks: result.landmarks,
+    });
     self.postMessage({ type: 'pose', sample });
   } catch (error) {
     self.postMessage({ type: 'error', message: error instanceof Error ? error.message : 'Pose tracking stopped unexpectedly.' });

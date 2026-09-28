@@ -17,6 +17,19 @@ describe('Gesture Engine', () => {
     expect(r.calibrated).toBe(true); expect(r.lane).toBe(0); expect(r.correction).toBe(null);
   });
   it('does not calibrate with raised hands', () => { const e=new GestureEngine(); expect(hold(e,0,0,'up',undefined,3000).result.calibrated).toBe(false); });
+  it('explains raised hands during calibration and clears the hint when they lower', () => {
+    const e = new GestureEngine();
+    const blocked = hold(e, 0, 0, 'up').result;
+    expect(blocked.correction?.text).toBe('Lower both hands below your shoulders to begin calibration.');
+    expect(blocked.correction?.highlightLandmarks).toEqual([15, 16]);
+    const ready = hold(e, 850, 0, 'down', undefined, 3000).result;
+    expect(ready.calibrated).toBe(true);
+    expect(ready.correction).toBe(null);
+  });
+  it('explains a leaning posture during calibration', () => {
+    const e = new GestureEngine();
+    expect(hold(e, 0, .4).result.correction?.text).toBe('Stand upright with your shoulders above your hips.');
+  });
   it('maps real-world leans into the mirrored left and right lanes', () => {
     const e=setup(); expect(hold(e,2250,-.35).result.lane).toBe(-1);
     expect(hold(e,3100,.35).result.lane).toBe(1);

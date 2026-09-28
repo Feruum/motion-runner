@@ -259,10 +259,15 @@ function transitionCopy(stage: Stage, now: number) {
   };
   if (stage === 'CALIBRATION') return {
     kicker: '01 / FIND YOUR NEUTRAL', title: 'Stand tall and easy.',
-    copy: 'Keep both hands low and shoulders relaxed while we learn your natural posture and scale.',
+    copy: analysis?.correction?.text ?? 'Lower your hands, stand upright and hold still for two seconds. Calibration starts automatically, then we will practise three moves.',
     action: '', foot: `${Math.round((analysis?.calibrationProgress ?? 0) * 100)}% CALIBRATED`, icon: '⌁', actionId: '',
   };
   if (stage === 'TUTORIAL') {
+    if (session.awaitingNeutral) return {
+      kicker: 'MOVE RECOGNIZED', title: 'Return to neutral.',
+      copy: 'Stand upright in the center and lower both hands to continue to the next move.',
+      action: '', foot: 'HANDS DOWN · SHOULDERS ABOVE HIPS', icon: '✓', actionId: '',
+    };
     const titles = ['Lean into the left lane.', 'Now find the right lane.', 'Lift off with both hands.'];
     const copies = [
       'Move your shoulders a little to your left. Follow the cue in your camera preview.',
@@ -281,7 +286,7 @@ function transitionCopy(stage: Stage, now: number) {
     kicker: 'ALL SET · HOLD TO START',
     title: session.startArmed ? 'Great. Hands down.' : 'Raise both hands.',
     copy: session.startArmed ? 'Lower your hands when you are ready. We will count you in.' : 'Hold them up together for one second. Your run begins only when you lower them.',
-    action: '', foot: session.startArmed ? 'LOWER HANDS TO COUNT IN' : `${Math.min(100, Math.floor(Math.max(0, now - Math.max(0, session.startSince)) / C.startHoldMs * 100))}% · HOLD BOTH HANDS HIGH`, icon: '↑', actionId: '',
+    action: '', foot: session.startArmed ? 'LOWER HANDS TO COUNT IN' : `${startHoldPercent(now)}% · HOLD BOTH HANDS HIGH`, icon: '↑', actionId: '',
   };
   if (stage === 'COUNTDOWN') {
     const count = Math.max(1, Math.ceil((session.countdownEndsAt - now) / 1000));
@@ -307,13 +312,17 @@ function transitionCopy(stage: Stage, now: number) {
   return { kicker: '', title: '', copy: '', action: '', foot: '', icon: '', actionId: '' };
 }
 
+function startHoldPercent(now: number) {
+  return session.startSince < 0 ? 0 : Math.min(100, Math.floor(Math.max(0, now - session.startSince) / C.startHoldMs * 100));
+}
+
 function currentUiKey(now: number) {
   const countdown = session.stage === 'COUNTDOWN' ? Math.ceil((session.countdownEndsAt - now) / 1000) : 0;
   const correctionCode = latestAnalysis?.correction?.code ?? '';
   const holdProgress = session.stage === 'READY' && !session.startArmed
-    ? Math.floor(Math.max(0, now - Math.max(0, session.startSince)) / C.startHoldMs * 10)
+    ? Math.floor(startHoldPercent(now) / 10)
     : 0;
-  return [session.stage, session.tutorialIndex, session.tutorialSuccess, session.startArmed, holdProgress, countdown, correctionCode].join(':');
+  return [session.stage, session.tutorialIndex, session.tutorialSuccess, session.awaitingNeutral, session.startArmed, holdProgress, countdown, correctionCode].join(':');
 }
 
 function renderOverlay(now: number) {
@@ -322,7 +331,7 @@ function renderOverlay(now: number) {
   if (stage === 'PLAYING') { overlay.innerHTML = ''; overlay.classList.add('is-hidden'); return; }
   overlay.classList.remove('is-hidden');
   const progress = stage === 'CALIBRATION' ? Math.round((latestAnalysis?.calibrationProgress ?? 0) * 100) : 0;
-  const holdPercent = stage === 'READY' && !session.startArmed ? Math.min(100, Math.floor(Math.max(0, now - Math.max(0, session.startSince)) / C.startHoldMs * 100)) : 0;
+  const holdPercent = stage === 'READY' && !session.startArmed ? startHoldPercent(now) : 0;
   const stateClass = stage.toLowerCase();
   overlay.className = `stage-overlay stage-${stateClass}`;
   overlay.innerHTML = `
@@ -353,9 +362,10 @@ function setPipeline(analysis: GestureAnalysis | null) {
   }
   if (analysis?.trackingValid && session.stage === 'TUTORIAL') {
     coachCount.textContent = `STEP ${session.tutorialIndex + 1} OF 3`;
-    coachCopy.textContent = analysis.correction?.text ?? (session.tutorialSuccess ? 'Move recognized · return to neutral.' : 'Follow the prompt above, then return to neutral.');
-  } else if (analysis?.trackingValid && (session.stage === 'CALIBRATION' || session.stage === 'TUTORIAL')) {
-    coachCount.textContent = 'ANALYZING YOUR MOVEMENT';
+    coachCopy.textContent = session.awaitingNeutral ? 'Stand upright and lower both hands to continue.' : analysis.correction?.text ?? 'Follow the prompt above, then return to neutral.';
+  } else if (session.stage === 'CALIBRATION') {
+    coachCount.textContent = 'CALIBRATION · HANDS DOWN';
+    coachCopy.textContent = analysis?.correction?.text ?? 'Keep your head, hips and hands visible. Stand still with both hands down for two seconds.';
   } else if (session.stage === 'PLAYING') {
     coachCount.textContent = 'LIVE · YOU ARE IN CONTROL';
     coachCopy.textContent = 'Lean to choose your lane. Raise both hands to jump.';
@@ -395,20 +405,28 @@ function drawSkeleton(analysis: GestureAnalysis | null) {
   }
   cameraView.classList.add('has-pose');
   context.save();
-  context.scale(pixelRatio, pixelRatio);
   context.lineCap = 'round';
   drawingUtils ??= new DrawingUtils(context);
-  const landmarks = analysis.landmarks.map(point => ({ x: point.x, y: point.y, z: point.z, visibility: point.visibility, presence: point.presence }));
+  // DrawingUtils uses backing-canvas pixels. Match the video's centered cover crop
+  // without applying devicePixelRatio again to its coordinates.
+  const frameWidth = latestSample?.frameWidth || video.videoWidth || width;
+  const frameHeight = latestSample?.frameHeight || video.videoHeight || height;
+  const scale = Math.max(width / frameWidth, height / frameHeight);
+  const landmarks = analysis.landmarks.map(point => ({
+    ...point,
+    x: (point.x * frameWidth * scale + (width - frameWidth * scale) / 2) / width,
+    y: (point.y * frameHeight * scale + (height - frameHeight * scale) / 2) / height,
+  }));
   const active = analysis.correction?.highlightLandmarks ?? [];
   context.shadowColor = active.length ? 'rgba(249, 183, 105, .6)' : 'rgba(148, 239, 212, .45)';
   context.shadowBlur = 9;
   drawingUtils.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS, {
     color: active.length ? 'rgba(251, 191, 128, .88)' : 'rgba(161, 233, 210, .82)',
-    lineWidth: Math.max(1.3, box.width * 0.006),
+    lineWidth: Math.max(1.3, box.width * 0.006) * pixelRatio,
   });
   drawingUtils.drawLandmarks(landmarks, {
     color: '#ecfff7', fillColor: active.length ? '#f3b978' : '#a4e8cc',
-    radius: Math.max(1.6, box.width * 0.008), lineWidth: 1.4,
+    radius: Math.max(1.6, box.width * 0.008) * pixelRatio, lineWidth: 1.4 * pixelRatio,
   });
   context.restore();
   if (active.length) {
@@ -431,6 +449,13 @@ function updateUI(now: number, force = false) {
   }
   if (now - previousUiAt > 85 || force) {
     previousUiAt = now;
+    if (session.stage === 'CALIBRATION') {
+      const progress = Math.round((latestAnalysis?.calibrationProgress ?? 0) * 100);
+      const bar = overlay.querySelector<HTMLElement>('.calibration-track i');
+      const label = overlay.querySelector<HTMLElement>('.overlay-foot');
+      if (bar) bar.style.width = `${progress}%`;
+      if (label) label.textContent = `${progress}% CALIBRATED`;
+    }
     const remaining = Math.max(0, duration - session.game.elapsedMs);
     const seconds = Math.ceil(remaining / 1000);
     timerLabel.textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
@@ -452,7 +477,10 @@ function updateUI(now: number, force = false) {
     }
     drawSkeleton(latestAnalysis);
     if (latestAnalysis?.trackingValid) {
-      cameraStatus.innerHTML = `<span class="status-dot status-live"></span><span>${latestAnalysis.calibrated ? 'BODY TRACKED' : 'CHECKING YOUR FRAME'}</span>`;
+      const status = latestAnalysis.calibrated ? 'BODY TRACKED'
+        : !latestAnalysis.handsDown ? 'LOWER BOTH HANDS'
+          : latestAnalysis.correction ? 'STAND UPRIGHT AND STILL' : 'HOLD STILL · CALIBRATING';
+      cameraStatus.innerHTML = `<span class="status-dot status-live"></span><span>${status}</span>`;
       cameraEmpty.hidden = true;
     } else if (session.stage === 'WELCOME' || session.stage === 'ERROR' || session.stage === 'LOADING') {
       cameraStatus.innerHTML = `<span class="status-dot"></span><span>${session.stage === 'ERROR' ? 'CAMERA NEEDS ATTENTION' : 'WAITING FOR CAMERA'}</span>`;

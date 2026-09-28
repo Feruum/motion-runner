@@ -57,6 +57,11 @@ export class GestureEngine {
     if (!this.calibrated) {
       const mean=this.calibrationSamples.length?this.calibrationSamples.reduce((a,b)=>a+b,0)/this.calibrationSamples.length:rawLean;
       if(!handsDown || Math.abs(rawLean)>.25 || Math.abs(rawLean-mean)>C.calibrationMaxDeviation) {
+        output.correction = !handsDown
+          ? {code:'calibration-hands',text:'Lower both hands below your shoulders to begin calibration.',highlightLandmarks:[P.leftWrist,P.rightWrist]}
+          : Math.abs(rawLean)>.25
+            ? {code:'calibration-upright',text:'Stand upright with your shoulders above your hips.',highlightLandmarks:[P.leftShoulder,P.rightShoulder,P.leftHip,P.rightHip]}
+            : {code:'calibration-still',text:'Hold still for two seconds so we can learn your neutral posture.',highlightLandmarks:[P.leftShoulder,P.rightShoulder]};
         this.calibrationStart=-1; this.calibrationSamples=[]; return output;
       }
       if(this.calibrationStart<0) this.calibrationStart=now;

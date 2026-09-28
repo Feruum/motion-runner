@@ -13,7 +13,7 @@ npm ci
 npm run dev
 ```
 
-Open the local Vite address in current desktop Chrome or Edge. Choose **Enable camera** once, allow camera access, stand back so your head, shoulders and hips are visible, then follow the three-step movement tutorial. Video and pose processing stay in the browser. Only the personal-best score is saved in local storage.
+Open the local Vite address in current desktop Chrome or Edge. Choose **Enable camera** once, allow camera access, and stand back so your head, shoulders, hips and hands are visible. Lower both hands and stand upright for two seconds to calibrate. Follow the three-step movement tutorial, returning upright with hands down between moves. On the ready screen, hold both hands above your head for one second, lower them, and wait for the three-second countdown. Video and pose processing stay in the browser. Only the personal-best score is saved in local storage.
 
 The normal build uses a 60-second round. For quick development runs, use `http://127.0.0.1:5173/?dev=1`; the short mode is enabled by Vite's development build only.
 
@@ -34,6 +34,7 @@ A cleared wave adds 10 points. A collision removes 5 points, down to zero. A wav
 - **Access denied:** allow camera access for this site in the browser and choose **Try again**.
 - **Camera missing or busy:** connect the laptop camera, or close the other app using it, then retry.
 - **Pose model failed to load:** check that the page can load its local `models/` and `wasm/` files, then retry.
+- **Calibration stays at 0%:** lower both hands below your shoulders and stand upright without leaning for two seconds. The setup screen explains which condition is blocking calibration, and the progress bar fills as you hold the neutral pose.
 - **Out of frame or weak tracking:** the course pauses. Return to the camera frame, lower both hands and wait through the recovery countdown.
 - **Hidden tab:** the run pauses when the page is hidden. Return to the tab to continue.
 

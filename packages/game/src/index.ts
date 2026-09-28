@@ -1,5 +1,7 @@
 export { CONFIG, POINT } from './core/config';
 export { GameEngine, makeWaves } from './core/game';
+export { DodgeArenaRuntime, getReachableDodgeLanes, validateDodgeWaves } from './core/dodge';
+export type { DodgeArenaSnapshot, DodgeWave } from './core/dodge';
 export { GestureEngine } from './core/gesture';
 export { SixSevenRecognizer } from './core/six-seven';
 export { SessionController } from './core/session';

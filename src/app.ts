@@ -206,6 +206,7 @@ async function beginSetup() {
   setupFailure = 'camera';
   session.restartSetup();
   session.startLoading();
+  cameraView.classList.remove('camera-live');
   updateUI(performance.now(), true);
   const preview = document.querySelector<HTMLElement>('.camera-preview-placeholder');
   preview?.remove();
@@ -216,11 +217,13 @@ async function beginSetup() {
     setupError = message;
     session.cameraFailed();
     tracker?.stop();
+    cameraView.classList.remove('camera-live');
     updateUI(performance.now(), true);
   });
   try {
     await tracker.start();
     if (!isLoading()) return;
+    cameraView.classList.add('camera-live');
     session.cameraReady();
     cameraEmpty.hidden = true;
     cameraStatus.innerHTML = '<span class="status-dot status-live"></span><span>CAMERA CONNECTED</span>';
@@ -236,6 +239,7 @@ async function beginSetup() {
           ? 'The camera is busy in another app. Close that app and try again.'
           : error instanceof Error ? error.message : 'Camera or pose model could not be started.';
     session.cameraFailed();
+    cameraView.classList.remove('camera-live');
     cameraStatus.innerHTML = '<span class="status-dot status-warning"></span><span>SETUP NEEDS ATTENTION</span>';
     updateUI(performance.now(), true);
   }

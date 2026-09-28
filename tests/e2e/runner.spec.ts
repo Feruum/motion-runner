@@ -61,6 +61,14 @@ test('loads the local camera model, WASM and KayKit models from the production b
   await page.goto('.');
   await page.getByRole('button', { name: 'Enable camera' }).click();
   await expect(page.getByRole('heading', { name: 'Stand tall and easy.' })).toBeVisible({ timeout: 30000 });
+  const previewState = await page.locator('#camera-video').evaluate(video => ({
+    opacity: Number(getComputedStyle(video).opacity),
+    hasStream: video instanceof HTMLVideoElement && video.srcObject instanceof MediaStream,
+    hasFrame: video instanceof HTMLVideoElement && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA,
+  }));
+  expect(previewState.hasStream).toBe(true);
+  expect(previewState.hasFrame).toBe(true);
+  await expect.poll(() => page.locator('#camera-video').evaluate(video => Number(getComputedStyle(video).opacity))).toBeGreaterThan(0.5);
   await expect.poll(() => [...assetResponses.keys()].some(path => path.endsWith('/pose_landmarker_lite.task'))).toBe(true);
   await expect.poll(() => [...assetResponses.keys()].some(path => path.includes('/wasm/') && path.endsWith('.wasm'))).toBe(true);
   await expect.poll(() => [...assetResponses.keys()].some(path => path.endsWith('/assets/character/Rogue_Hooded.glb'))).toBe(true);

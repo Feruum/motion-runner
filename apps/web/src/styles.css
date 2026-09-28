@@ -1,3 +1,5 @@
+.correction-toast[hidden] { display: none; }
+
 :root {
   font-family: 'DM Sans', sans-serif;
   color: #172523;

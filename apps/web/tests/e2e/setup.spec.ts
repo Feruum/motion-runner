@@ -35,6 +35,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('explains calibration and starts through gestures with visible progress', async ({ page }) => {
+  test.setTimeout(115000);
   const setPose = async (lean = 0, arms: Parameters<typeof pose>[2] = 'down') => {
     await page.evaluate(sample => {
       (window as unknown as { poseFixture: { sample: typeof sample } }).poseFixture.sample = sample;
@@ -58,6 +59,32 @@ test('explains calibration and starts through gestures with visible progress', a
   await setPose();
   await expect(page.locator('.stage-countdown')).toBeVisible();
   await expect(page.locator('.stage-overlay')).toHaveClass(/is-hidden/);
+  await setPose(-.35);
+  await expect(page.locator('.stage-results')).toBeVisible({ timeout: 75000 });
+  const score = Number(await page.locator('.results-metrics strong').first().textContent());
+  expect(score).toBeGreaterThan(0);
+  expect(await page.evaluate(() => Number(localStorage.getItem('motion-runner-best')))).toBe(score);
+  await setPose(0, 'up');
+  // A deliberate held start gesture, measured in real active time.
+  await page.waitForTimeout(1600);
+  await setPose();
+  await expect(page.locator('.stage-countdown')).toBeVisible();
+  await expect(page.locator('#score')).toHaveText('000');
+  await page.reload();
+  expect(await page.evaluate(() => Number(localStorage.getItem('motion-runner-best')))).toBe(score);
+});
+
+test('removes a correction promptly when the player returns to neutral', async ({ page }) => {
+  const setPose = async (lean: number) => page.evaluate(sample => {
+    (window as unknown as { poseFixture: { sample: typeof sample } }).poseFixture.sample = sample;
+  }, pose(0, lean));
+  await setPose(0);
+  await expect(page.getByRole('heading', { name: 'Lean into the left lane.' })).toBeVisible();
+  await setPose(-.15);
+  await expect(page.locator('#correction-toast')).toContainText('Lean further left');
+  await expect(page.locator('#correction-toast')).toHaveClass(/is-visible/);
+  await setPose(0);
+  await expect(page.locator('#correction-toast')).toBeHidden({ timeout: 700 });
 });
 
 test('aligns the skeleton with the video at double pixel density and after resize', async ({ page }) => {

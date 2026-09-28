@@ -4,7 +4,7 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { BloomEffect, EffectComposer, EffectPass, RenderPass, SMAAEffect } from 'postprocessing';
 import { BatchedRenderer, ConstantColor, ConstantValue, ParticleEmitter, ParticleSystem, PointEmitter, Vector4 } from 'three.quarks';
 import { CONFIG as C } from '@motion-runner/game';
-import type { GameEngine, Stage } from '@motion-runner/game';
+import type { GameEngine, GestureAnalysis, Stage } from '@motion-runner/game';
 import { CHARACTERS } from './characters';
 import type { CharacterId } from './characters';
 
@@ -61,6 +61,10 @@ export class RunnerWorld {
   private destroyed = false;
   private lastSuccessCount = 0;
   private lastHitCount = 0;
+  private previousStage: Stage = 'WELCOME';
+  private previewTimeMs = 0;
+  private previewJumpStartedMs = -Infinity;
+  private previewPoseTime = -1;
   private readonly scratch = new THREE.Vector3();
 
   constructor(
@@ -92,37 +96,63 @@ export class RunnerWorld {
     this.render();
   }
 
-  update(stage: Stage, game: GameEngine, frameDeltaMs: number): void {
+  update(stage: Stage, game: GameEngine, frameDeltaMs: number, pose?: GestureAnalysis): void {
     if (this.destroyed) return;
     if (this.character) this.character.rotation.y = stage === 'WELCOME' ? 0 : Math.PI;
+    if (game.elapsedMs < this.elapsedMs || (stage === 'COUNTDOWN' && this.previousStage !== stage && game.elapsedMs === 0)) {
+      this.currentJumpMs = -Infinity;
+      this.reactionUntilMs = -Infinity;
+      this.lastHitCount = 0;
+      this.lastSuccessCount = 0;
+    }
+    this.previousStage = stage;
     this.elapsedMs = game.elapsedMs;
+    const frozen = stage === 'PAUSED' || (stage === 'COUNTDOWN' && game.paused);
+    const dt = frozen ? 0 : Math.min(0.1, Math.max(0, frameDeltaMs / 1000));
+    const preview = stage === 'TUTORIAL' || stage === 'READY';
+    if (preview) {
+      this.previewTimeMs += dt * 1000;
+      if (stage === 'TUTORIAL' && pose?.trackingValid && pose.jumpTriggered && pose.timestampMs !== this.previewPoseTime) {
+        this.previewPoseTime = pose.timestampMs;
+        if (this.previewTimeMs - this.previewJumpStartedMs >= C.jumpMs) this.previewJumpStartedMs = this.previewTimeMs;
+      }
+    } else {
+      this.previewTimeMs = 0;
+      this.previewJumpStartedMs = -Infinity;
+      this.previewPoseTime = -1;
+    }
+    const running = stage === 'PLAYING' || stage === 'PAUSED' || (stage === 'COUNTDOWN' && game.paused);
+    const jumpAge = preview ? this.previewTimeMs - this.previewJumpStartedMs : running ? game.jumpAgeMs : Infinity;
+    const airborne = jumpAge >= 0 && jumpAge < C.jumpMs;
     const gotHit = game.collisions > this.lastHitCount;
     if (gotHit) {
       const hitDuration = this.actions.get('Hit_A')?.getClip().duration ?? 0.55;
       this.reactionUntilMs = game.elapsedMs + hitDuration * 1000;
     }
-    this.targetX = laneX[game.lane + 1];
-    this.actor.position.x = THREE.MathUtils.damp(this.actor.position.x, this.targetX, 6.5, Math.min(frameDeltaMs, 100) / 1000);
-    this.actor.position.y = game.jumpHeight;
-    if (game.jumpStartedMs !== this.currentJumpMs && game.jumpAgeMs >= 0 && game.jumpAgeMs < C.jumpMs) {
-      this.currentJumpMs = game.jumpStartedMs;
+    const lane = stage === 'TUTORIAL' && pose?.trackingValid ? pose.lane : game.lane;
+    this.targetX = laneX[lane + 1];
+    this.actor.position.x = THREE.MathUtils.damp(this.actor.position.x, this.targetX, 6.5, dt);
+    this.actor.position.z = C.runnerZ;
+    this.actor.position.y = airborne ? Math.sin(Math.PI * jumpAge / C.jumpMs) * 2.2 : 0;
+    if (airborne) {
+      const jumpStart = preview ? this.previewJumpStartedMs : game.jumpStartedMs;
+      if (jumpStart !== this.currentJumpMs) {
+        this.currentJumpMs = jumpStart;
+        this.burst(this.actor.position.x, 0.04, C.runnerZ, 14);
+      }
       this.playAction('Jump_Full_Short', true, C.jumpMs / 1000);
-      this.burst(this.actor.position.x, 0.04, 2.9, 14);
-    } else if ((stage === 'PLAYING' || stage === 'PAUSED') && game.elapsedMs < this.reactionUntilMs) {
+    } else if (running && game.elapsedMs < this.reactionUntilMs) {
       this.playAction('Hit_A', true);
-    } else if ((stage === 'PLAYING' || stage === 'PAUSED') && game.jumpHeight === 0 && this.currentActionName.startsWith('Jump_')) {
-      this.playAction('Running_A');
     } else if (stage === 'RESULTS') {
       this.playAction('Cheer');
-    } else if ((stage === 'PLAYING' || stage === 'PAUSED') && !this.currentActionName.startsWith('Jump_')) {
+    } else if (running) {
       this.playAction('Running_A');
     } else {
       this.playAction('Idle');
     }
 
-    const dt = Math.min(0.1, Math.max(0, frameDeltaMs / 1000));
     this.mixer?.update(dt);
-    this.updateTrack(stage === 'PLAYING' || stage === 'PAUSED' ? game.elapsedMs : 0);
+    this.updateTrack(running ? game.elapsedMs : 0);
     this.updateObstacles(stage, game);
     this.particleBatch.update(dt);
     if (game.cleared > this.lastSuccessCount) {
@@ -130,7 +160,7 @@ export class RunnerWorld {
       this.lastSuccessCount = game.cleared;
     }
     if (gotHit) {
-      this.burst(this.actor.position.x, 0.55, 2.8, 7);
+      this.burst(this.actor.position.x, 0.55, C.runnerZ, 7);
       this.lastHitCount = game.collisions;
     }
     this.render();
@@ -248,7 +278,7 @@ export class RunnerWorld {
     for (let z = 4; z > -24; z -= trackTileLength) {
       for (const x of laneX) {
         const tile = this.platformFallback.clone();
-        tile.position.set(x, -0.28, z);
+        tile.position.set(x, -0.225, z);
         tile.castShadow = true;
         tile.receiveShadow = true;
         this.moving.add(tile);
@@ -408,6 +438,7 @@ export class RunnerWorld {
       const platform = this.platformModel.clone(true);
       platform.position.copy(fallback.position);
       platform.scale.set(1, 0.5, 1.3);
+      platform.position.y -= new THREE.Box3().setFromObject(platform).max.y;
       platform.traverse(object => {
         if (object instanceof THREE.Mesh) { object.castShadow = true; object.receiveShadow = true; }
       });
@@ -452,6 +483,8 @@ export class RunnerWorld {
     const clone = cloneSkinned(model);
     clone.rotation.y = Math.PI;
     clone.scale.setScalar(0.92);
+    const weapons = new Set(['Knife', 'Knife_Offhand', '1H_Crossbow', '2H_Crossbow', 'Throwable']);
+    clone.traverse(object => { if (weapons.has(object.name)) object.visible = false; });
     clone.traverse(object => { if (object instanceof THREE.Mesh) { object.castShadow = true; object.receiveShadow = true; } });
     const bounds = new THREE.Box3().setFromObject(clone);
     clone.position.y -= bounds.min.y;
@@ -499,7 +532,8 @@ export class RunnerWorld {
       const lane = i % laneX.length;
       const segment = Math.floor(i / laneX.length);
       const z = 4 - ((segment * trackTileLength + scroll) % ringLength);
-      this.tiles[i].position.set(laneX[lane], -0.28, z);
+      this.tiles[i].position.x = laneX[lane];
+      this.tiles[i].position.z = z;
     }
     for (const object of this.moving.children) {
       if (object.userData.scrollingOverhead !== true) continue;
@@ -510,12 +544,12 @@ export class RunnerWorld {
   }
 
   private updateObstacles(stage: Stage, game: GameEngine) {
-    const visible = stage === 'PLAYING' || stage === 'PAUSED';
+    const visible = stage === 'PLAYING' || stage === 'PAUSED' || (stage === 'COUNTDOWN' && game.paused);
     const active = new Set<number>();
     for (const wave of game.waves) {
-      if (wave.resolved || !visible) continue;
+      if (!visible) continue;
       const start = wave.atMs - C.wavePreviewMs;
-      if (game.elapsedMs < start || game.elapsedMs > wave.atMs) continue;
+      if (game.elapsedMs < start || game.elapsedMs > wave.atMs + C.obstacleExitMs) continue;
       active.add(wave.id);
       let group = this.obstacleGroups.get(wave.id);
       if (!group) {
@@ -526,8 +560,9 @@ export class RunnerWorld {
           let model: THREE.Object3D;
           if (obstacle.kind === 'low') model = this.lowModel ? this.lowModel.clone(true) : this.lowFallback.clone();
           else model = this.highModel ? this.highModel.clone(true) : this.tallFallback.clone();
-          model.position.set(laneX[obstacle.lane + 1], obstacle.kind === 'low' ? 0.28 : 1.12, 0);
+          model.position.set(laneX[obstacle.lane + 1], 0, 0);
           model.scale.multiplyScalar(obstacle.kind === 'low' ? 0.82 : 0.73);
+          model.position.y -= new THREE.Box3().setFromObject(model).min.y;
           model.userData.obstacleIndex = index;
           model.traverse(child => { if (child instanceof THREE.Mesh) { child.castShadow = true; child.receiveShadow = true; } });
           group!.add(model);
@@ -543,8 +578,8 @@ export class RunnerWorld {
         this.obstacleGroups.set(wave.id, group);
       }
       if (!group) continue;
-      const progress = THREE.MathUtils.clamp((game.elapsedMs - start) / C.wavePreviewMs, 0, 1);
-      group.position.z = -14 + progress * 17;
+      const progress = (game.elapsedMs - start) / C.wavePreviewMs;
+      group.position.z = C.obstacleSpawnZ + progress * (C.runnerZ - C.obstacleSpawnZ);
       group.children.forEach((child, index) => {
         if (child.userData.pickup) {
           child.rotation.y += 0.012;

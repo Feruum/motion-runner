@@ -132,6 +132,7 @@ try {
   const storedBest = Number(localStorage.getItem(BEST_KEY));
   session.bestScore = Number.isFinite(storedBest) && storedBest > 0 ? storedBest : 0;
 } catch { /* Storage can be disabled; the round remains playable. */ }
+let persistedBest = session.bestScore;
 
 let world: RunnerWorld | null = null;
 let tracker: PoseTracker | null = null;
@@ -147,11 +148,17 @@ let previousLane = 0;
 let setupError = '';
 let setupFailure: 'camera' | 'model' = 'camera';
 let assetMessage = 'Loading the city';
-let correctionSeenAt = -Infinity;
 let previousCleared = 0;
 let previousCollisions = 0;
 
 function isLoading() { return session.stage === 'LOADING'; }
+
+function persistPersonalBest() {
+  // SessionController has already updated bestScore when it enters RESULTS.
+  if (session.bestScore <= persistedBest) return;
+  try { localStorage.setItem(BEST_KEY, String(session.bestScore)); } catch { /* Storage is optional. */ }
+  persistedBest = session.bestScore;
+}
 
 try {
   world = new RunnerWorld(sceneCanvas, (message, animations = []) => {
@@ -471,12 +478,11 @@ function updateUI(now: number, force = false) {
       if (previousScore >= 0) void animate(scoreLabel, { transform: ['scale(1)', 'scale(1.13)', 'scale(1)'] }, { duration: 0.38, ease: 'easeOut' });
       previousScore = session.game.score;
     }
-    if (latestAnalysis?.correction && (session.stage === 'TUTORIAL' || session.stage === 'PLAYING')) {
+    if (latestAnalysis?.trackingValid && now - latestAnalysis.timestampMs <= C.staleMs && latestAnalysis.correction && (session.stage === 'TUTORIAL' || session.stage === 'PLAYING')) {
       toastText.textContent = latestAnalysis.correction.text;
       toast.hidden = false;
       toast.classList.add('is-visible');
-      correctionSeenAt = now;
-    } else if (now - correctionSeenAt > C.correctionRepeatMs) {
+    } else {
       toast.classList.remove('is-visible');
       toast.hidden = true;
     }
@@ -503,13 +509,7 @@ function onPoseTick(now: number) {
   }
   if (stageBefore !== session.stage && session.stage === 'PLAYING') playCue('ready');
   playGameCues();
-  if (session.stage === 'RESULTS') {
-    const prior = session.bestScore;
-    session.bestScore = Math.max(session.bestScore, session.game.score);
-    if (session.bestScore > prior) {
-      try { localStorage.setItem(BEST_KEY, String(session.bestScore)); } catch { /* Private browsing may block persistence. */ }
-    }
-  }
+  if (session.stage === 'RESULTS') persistPersonalBest();
   setPipeline(latestAnalysis);
 }
 
@@ -517,7 +517,6 @@ function handlePoseSample(sample: PoseSample) {
   const expected = session.stage === 'TUTORIAL' ? session.tutorialTarget : undefined;
   latestSample = sample;
   latestAnalysis = gesture.update(sample, expected);
-  if (latestAnalysis.correction) correctionSeenAt = performance.now();
   const now = performance.now();
   onPoseTick(now);
   if (latestAnalysis.jumpTriggered) playCue('jump');
@@ -529,8 +528,10 @@ function handlePoseSample(sample: PoseSample) {
 }
 
 function playGameCues() {
-  if (session.game.cleared > previousCleared) { playCue('clear'); previousCleared = session.game.cleared; }
-  if (session.game.collisions > previousCollisions) { playCue('hit'); previousCollisions = session.game.collisions; }
+  if (session.game.cleared > previousCleared) playCue('clear');
+  if (session.game.collisions > previousCollisions) playCue('hit');
+  previousCleared = session.game.cleared;
+  previousCollisions = session.game.collisions;
 }
 
 function loop(now: number) {
@@ -541,15 +542,10 @@ function loop(now: number) {
     session.tick(now, latestAnalysis);
     if (stageBefore !== session.stage && session.stage === 'PLAYING') playCue('ready');
     playGameCues();
-    if (session.stage === 'RESULTS') {
-      const prior = session.bestScore;
-      session.bestScore = Math.max(session.bestScore, session.game.score);
-      if (session.bestScore > prior) {
-        try { localStorage.setItem(BEST_KEY, String(session.bestScore)); } catch { /* Storage is optional. */ }
-      }
-    }
+    if (session.stage === 'RESULTS') persistPersonalBest();
   }
-  world?.update(session.stage, session.game, dt);
+  const previewPose = latestAnalysis && now - latestAnalysis.timestampMs <= C.staleMs ? latestAnalysis : undefined;
+  world?.update(session.stage, session.game, dt, previewPose);
   updateUI(now);
   requestAnimationFrame(loop);
 }

@@ -2,8 +2,13 @@ node_modules/
 **/node_modules/
 dist/
 apps/web/dist/
+apps/api/data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 playwright-report/
 test-results/
 .env*
 !.env.example
+!apps/api/.env.example
 .DS_Store

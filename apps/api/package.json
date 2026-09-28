@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "bun --watch src/index.ts",
-    "start": "bun src/index.ts"
+    "start": "bun src/index.ts",
+    "test": "bun test",
+    "check": "tsc --noEmit"
   },
   "dependencies": {
     "hono": "^4.11.2"

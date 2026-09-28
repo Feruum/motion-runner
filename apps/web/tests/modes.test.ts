@@ -9,6 +9,29 @@ function oneHandPose(timestampMs: number, hand: 'left' | 'right') {
 }
 
 describe('mode chart lifecycle', () => {
+  it('uses the dedicated 24-wave Dodge route in the 3D game timeline', () => {
+    const game = new GameEngine(60_000);
+    configureGameForMode(game, 'dodge-arena');
+
+    expect(game.waves).toHaveLength(24);
+    expect(game.waves[0]).toMatchObject({ atMs: 4_000, warningAtMs: 2_000, obstacles: [{ lane: 0, kind: 'high' }] });
+    expect(game.waves[1].atMs - game.waves[0].atMs).toBe(2_300);
+    expect(game.waves.every(wave => wave.obstacles.every(obstacle => obstacle.kind === 'high'))).toBe(true);
+  });
+
+  it('scores Dodge hits and clears through its dedicated runtime on the session clock', () => {
+    const mode = new ModeEngine('dodge-arena', 60_000);
+    const events = [] as string[];
+
+    for (let elapsedMs = 0; elapsedMs <= 4_000; elapsedMs += 100) {
+      const lane = elapsedMs < 4_000 ? -1 : 0;
+      events.push(...mode.update(elapsedMs, analysis(elapsedMs, { lane })));
+    }
+
+    expect(events).toContain('hit');
+    expect(mode.snapshot(4_000)).toMatchObject({ score: 0, collisions: 1, misses: 1, combo: 0 });
+  });
+
   it('starts Rhythm Run after its two-second preview and repeats the four-beat phrase every two seconds', () => {
     const mode = new ModeEngine('rhythm-run', 20_000);
 
@@ -20,7 +43,25 @@ describe('mode chart lifecycle', () => {
       [12_000, 'LEAN_LEFT'],
     ]);
     expect(mode.snapshot(1_999).activeCue).toBeNull();
-    expect(mode.snapshot(2_000).activeCue).toMatchObject({ atMs: 4_000, move: 'LEAN_LEFT' });
+    expect(mode.snapshot(2_000).activeCue).toBeNull();
+    expect(mode.snapshot(3_640).activeCue).toMatchObject({ atMs: 4_000, move: 'LEAN_LEFT' });
+  });
+
+  it.each([2_000, 3_639, 3_640, 4_000, 4_360, 4_361])('only asks for a Rhythm move when it can score at %i ms', elapsedMs => {
+    const mode = new ModeEngine('rhythm-run', 20_000);
+    mode.update(0, analysis(0));
+    const canMoveNow = mode.snapshot(elapsedMs).activeCue !== null;
+    const events = mode.update(elapsedMs, analysis(elapsedMs, { lane: -1 }));
+    expect(canMoveNow).toBe(events.includes('clear'));
+  });
+
+  it.each(['hit', 'miss'] as const)('clears Rhythm feedback after a %s so the next move can be shown', outcome => {
+    const mode = new ModeEngine('rhythm-run', 20_000);
+    const elapsedMs = outcome === 'hit' ? 4_000 : 4_361;
+    mode.update(elapsedMs, analysis(elapsedMs, { lane: outcome === 'hit' ? -1 : 0 }));
+    expect(mode.snapshot(elapsedMs).feedback).not.toBe('');
+    expect(mode.snapshot(5_600)).toMatchObject({ feedback: '', feedbackKind: 'neutral' });
+    expect(mode.snapshot(5_640).activeCue?.move).toBe('HANDS_UP_JUMP');
   });
 
   it('misses a Rhythm move after the plus-or-minus 360ms scoring window', () => {

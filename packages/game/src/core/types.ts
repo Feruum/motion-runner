@@ -14,5 +14,5 @@ export type GameMode = 'classic-run' | 'rhythm-run' | 'mirror-challenge' | 'dodg
 export type Stage = 'WELCOME' | 'LOADING' | 'CALIBRATION' | 'TUTORIAL' | 'READY' | 'COUNTDOWN' | 'PLAYING' | 'PAUSED' | 'RESULTS' | 'ERROR';
 export interface GameInput { lane: Lane; jump: boolean }
 export type ObstacleKind = 'low' | 'high';
-export interface Wave { id: number; atMs: number; obstacles: { lane: Lane; kind: ObstacleKind }[]; resolved: boolean }
+export interface Wave { id: number; atMs: number; warningAtMs?: number; obstacles: { lane: Lane; kind: ObstacleKind }[]; resolved: boolean }
 export type GameEvent = 'jump' | 'clear' | 'hit' | 'finish';

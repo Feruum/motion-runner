@@ -1,11 +1,14 @@
 import { CONFIG as C } from './config';
 import { GameEngine } from './game';
-import type { GestureAnalysis, Stage } from './types';
+import type { GameMode, GestureAnalysis, Stage, TutorialGesture } from './types';
 
-export const tutorialSteps=['LEAN_LEFT','LEAN_RIGHT','HANDS_UP_JUMP'] as const;
+export const standardTutorialSteps: readonly TutorialGesture[]=['LEAN_LEFT','LEAN_RIGHT','HANDS_UP_JUMP'];
+export const sixSevenTutorialSteps: readonly TutorialGesture[]=['LEFT_HAND_UP','RIGHT_HAND_UP'];
+export const dodgeTutorialSteps: readonly TutorialGesture[]=['LEAN_LEFT','LEAN_RIGHT'];
 export class SessionController {
   stage:Stage='WELCOME';
   readonly game:GameEngine;
+  tutorialMode:GameMode;
   tutorialIndex=0;
   awaitingNeutral=false;
   tutorialSuccess=false;
@@ -18,17 +21,22 @@ export class SessionController {
   lastJumpEventAt=-1;
   private tutorialMatchSince=-1;
   bestScore=0;
-  constructor(durationMs:number=C.durationMs){this.game=new GameEngine(durationMs);}
-  get tutorialTarget(){return tutorialSteps[this.tutorialIndex]??'HANDS_UP_JUMP';}
+  constructor(durationMs:number=C.durationMs, mode:GameMode='classic-run'){this.game=new GameEngine(durationMs);this.tutorialMode=mode;}
+  get tutorialSteps(){return this.tutorialMode==='six-seven'?sixSevenTutorialSteps:this.tutorialMode==='dodge-arena'?dodgeTutorialSteps:standardTutorialSteps;}
+  get tutorialTarget():TutorialGesture{return this.tutorialSteps[this.tutorialIndex]??'HANDS_UP_JUMP';}
   get tutorialProgress(){return this.tutorialIndex;}
+  setTutorialMode(mode:GameMode){this.tutorialMode=mode;this.tutorialIndex=0;this.awaitingNeutral=false;this.tutorialSuccess=false;this.tutorialMatchSince=-1;}
   tick(now:number, pose:GestureAnalysis):Stage {
     const dt=this.lastTickAt<0?0:Math.min(100,Math.max(0,now-this.lastTickAt));
     this.lastTickAt=now;
-    if(pose.trackingValid&&now-pose.timestampMs<=C.staleMs) this.lastValidAt=now;
+    const fresh=pose.trackingValid&&now-pose.timestampMs<=C.staleMs;
+    if(fresh) this.lastValidAt=pose.timestampMs;
+    // A jump used during setup/recovery must not fire on the first playing frame.
+    if(this.stage!=='PLAYING'&&pose.jumpTriggered)this.lastJumpEventAt=pose.timestampMs;
     if(this.stage==='CALIBRATION'&&pose.calibrated){this.stage='TUTORIAL';return this.stage;}
     if(this.stage==='TUTORIAL') {this.tickTutorial(now,pose);return this.stage;}
     if(this.stage==='READY'||this.stage==='RESULTS') {
-      const fresh=pose.trackingValid&&now-pose.timestampMs<=C.staleMs;
+      if(!fresh||!pose.handsTracked){this.startSince=-1;this.startArmed=false;return this.stage;}
       if(pose.handsUp&&fresh) {
         if(this.startSince<0)this.startSince=now;
         if(now-this.startSince>=C.startHoldMs)this.startArmed=true;
@@ -39,21 +47,35 @@ export class SessionController {
       return this.stage;
     }
     if(this.stage==='COUNTDOWN') {
-      if(!pose.trackingValid||now-pose.timestampMs>C.staleMs||!pose.handsDown){this.pause();return this.stage;}
+      if(documentHiddenSafe()){this.pause();return this.stage;}
+      if(!fresh){
+        this.countdownEndsAt+=dt;
+        if(now-this.lastValidAt>=C.trackingGraceMs)this.pause();
+        return this.stage;
+      }
       if(now>=this.countdownEndsAt){this.stage='PLAYING';this.game.paused=false;this.startArmed=false;this.startSince=-1;this.lastTickAt=now;}
       return this.stage;
     }
     if(this.stage==='PLAYING') {
-      if(!pose.trackingValid||now-pose.timestampMs>C.staleMs){this.pause();return this.stage;}
       if(documentHiddenSafe()){this.pause();return this.stage;}
+      if(!fresh){
+        this.game.paused=true;
+        if(now-this.lastValidAt>=C.trackingGraceMs)this.pause();
+        return this.stage;
+      }
+      const step=this.game.paused?0:dt;
+      this.game.paused=false;
       const jump=pose.jumpTriggered&&pose.timestampMs!==this.lastJumpEventAt;
       if(jump)this.lastJumpEventAt=pose.timestampMs;
-      const events=this.game.update(dt,{lane:pose.lane,jump});
+      const controls=this.tutorialMode==='six-seven'?{lane:0 as const,jump:false}
+        :this.tutorialMode==='dodge-arena'?{lane:pose.lane,jump:false}
+          :{lane:pose.lane,jump};
+      const events=this.game.update(step,controls);
       if(events.includes('finish')) {this.stage='RESULTS';this.bestScore=Math.max(this.bestScore,this.game.score);}
       return this.stage;
     }
     if(this.stage==='PAUSED') {
-      const recovered=pose.trackingValid&&now-pose.timestampMs<=C.staleMs&&pose.handsDown&&!documentHiddenSafe();
+      const recovered=fresh&&!documentHiddenSafe();
       if(!recovered){this.recoverySince=-1;return this.stage;}
       if(this.recoverySince<0)this.recoverySince=now;
       if(now-this.recoverySince>=C.recoveryMs)this.beginCountdown(now,false);
@@ -62,27 +84,45 @@ export class SessionController {
     return this.stage;
   }
   private tickTutorial(now:number,pose:GestureAnalysis){
-    if(!pose.trackingValid||!pose.calibrated){this.tutorialMatchSince=-1;return;}
+    if(!pose.trackingValid||!pose.calibrated||now-pose.timestampMs>C.staleMs){this.tutorialMatchSince=-1;return;}
     if(this.awaitingNeutral){
       if(pose.lane===0&&pose.handsDown){this.awaitingNeutral=false;this.tutorialSuccess=false;}
       else this.tutorialSuccess=false;
       return;
     }
-    const match=this.tutorialTarget==='LEAN_LEFT'?pose.lane===-1:this.tutorialTarget==='LEAN_RIGHT'?pose.lane===1:pose.handsUp;
+    const match=this.tutorialTarget==='LEAN_LEFT'?pose.lane===-1
+      :this.tutorialTarget==='LEAN_RIGHT'?pose.lane===1
+        :this.tutorialTarget==='HANDS_UP_JUMP'?pose.handsUp
+          :this.matchesSingleRaisedHand(pose,this.tutorialTarget==='LEFT_HAND_UP'?'left':'right');
     if(!match){this.tutorialMatchSince=-1;return;}
     if(this.tutorialMatchSince<0)this.tutorialMatchSince=now;
     if(now-this.tutorialMatchSince>=C.tutorialConfirmMs){
       this.tutorialSuccess=true;this.awaitingNeutral=true;this.tutorialMatchSince=-1;
-      if(this.tutorialIndex<tutorialSteps.length-1)this.tutorialIndex++;
+      if(this.tutorialIndex<this.tutorialSteps.length-1)this.tutorialIndex++;
       else {this.stage='READY';this.awaitingNeutral=false;this.tutorialSuccess=false;this.startArmed=false;this.game.reset();}
     }
   }
+  private matchesSingleRaisedHand(pose:GestureAnalysis,hand:'left'|'right'){
+    if(!pose.handsTracked)return false;
+    const l=pose.landmarks;if(l.length<25)return false;
+    const eyeY=Math.min(l[2].y,l[5].y);
+    const torso=Math.max(.08,((l[23].y+l[24].y)/2)-((l[11].y+l[12].y)/2));
+    const left=l[15].visibility>=C.confidence&&l[15].y<eyeY-C.headMargin*torso;
+    const right=l[16].visibility>=C.confidence&&l[16].y<eyeY-C.headMargin*torso;
+    return hand==='left'?left&&!right:right&&!left;
+  }
   private beginCountdown(now:number,resetGame=true){
-    this.stage='COUNTDOWN';this.countdownEndsAt=now+C.countdownMs;this.recoverySince=-1;
+    this.stage='COUNTDOWN';this.countdownEndsAt=now+(resetGame?C.countdownMs:C.recoveryCountdownMs);this.recoverySince=-1;
     this.startArmed=false;this.startSince=-1;
     if(resetGame)this.game.reset();else this.game.paused=true;
   }
   private pause(){this.stage='PAUSED';this.game.paused=true;this.recoverySince=-1;}
+  requestReplay(now:number,pose:GestureAnalysis):boolean{
+    if(this.stage!=='RESULTS'||!pose.calibrated||!pose.trackingValid||now-pose.timestampMs>C.staleMs||documentHiddenSafe())return false;
+    this.lastJumpEventAt=pose.timestampMs;
+    this.beginCountdown(now);
+    return true;
+  }
   startLoading(){if(this.stage==='WELCOME'||this.stage==='ERROR')this.stage='LOADING';}
   cameraReady(){if(this.stage==='LOADING')this.stage='CALIBRATION';}
   cameraFailed(){this.stage='ERROR';this.game.paused=true;}

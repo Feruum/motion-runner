@@ -1,6 +1,7 @@
 import { GameEngine, makeWaves } from './game';
+import { DodgeArenaRuntime, makeDodgeWaves as makeAuthoredDodgeWaves } from './dodge';
 import { SixSevenRecognizer } from './six-seven';
-import type { GameMode, GestureAnalysis, GameEvent, Lane, Wave } from './types';
+import type { GameMode, GestureAnalysis, GameEvent, Wave } from './types';
 
 export interface ModeDefinition {
   id: GameMode;
@@ -16,7 +17,7 @@ export const GAME_MODES: readonly ModeDefinition[] = [
   { id: 'classic-run', title: 'Classic Run', subtitle: 'Run the skyway', instruction: 'Lean to change lanes. Raise both hands to jump.', icon: '↗', music: false },
   { id: 'rhythm-run', title: 'Rhythm Run', subtitle: 'Move on the beat', instruction: 'Follow each move cue and hit it as the beat lands.', icon: '♫', music: true },
   { id: 'mirror-challenge', title: 'Mirror Challenge', subtitle: 'Copy the coach', instruction: 'Match the coach’s pose and hold it when the pulse lands.', icon: '◉', music: true },
-  { id: 'dodge-arena', title: 'Dodge Arena', subtitle: 'Keep your combo alive', instruction: 'Watch the lane marker, then lean away or jump over low barriers.', icon: '⚡', music: true },
+  { id: 'dodge-arena', title: 'Dodge Arena', subtitle: 'Keep your combo alive', instruction: 'Watch the warning and lean into a safe lane.', icon: '⚡', music: false },
   { id: 'beat-blaster', title: 'Beat Blaster', subtitle: 'Reach for the targets', instruction: 'Extend the matching arm toward each glowing target on the beat.', icon: '✦', music: true },
   { id: 'dance-party', title: 'Dance Party · Solo', subtitle: 'Copy a short routine', instruction: 'Follow the left, right and hands-up choreography in time.', icon: '✺', music: true },
   { id: 'six-seven', title: 'Six-Seven Challenge', subtitle: 'Alternate hands', instruction: 'Raise one hand, switch hands, then return to the first hand.', icon: '67', music: false },
@@ -32,6 +33,7 @@ export interface ModeSnapshot {
   score: number;
   cleared: number;
   misses: number;
+  collisions: number;
   combo: number;
   bestCombo: number;
   playerOneScore: number;
@@ -54,6 +56,9 @@ const intervalMs: Record<keyof typeof chartMoves, number> = {
   'rhythm-run': 2000, 'mirror-challenge': 3000, 'beat-blaster': 1600, 'dance-party': 2200, 'dance-duo': 2200,
 };
 
+const RHYTHM_WINDOW_MS = 360;
+const RHYTHM_FEEDBACK_MS = 800;
+
 export function buildModeChart(mode: GameMode, durationMs: number): ModeCue[] {
   if (!(mode in chartMoves)) return [];
   const key = mode as keyof typeof chartMoves;
@@ -67,13 +72,15 @@ export function buildModeChart(mode: GameMode, durationMs: number): ModeCue[] {
 }
 
 export function makeDodgeWaves(durationMs: number): Wave[] {
-  const lanes: Lane[] = [-1, 0, 1, 0, 1, -1];
-  const waves: Wave[] = [];
-  for (let atMs = 3200, id = 0; atMs < durationMs - 500; atMs += 2100, id++) {
-    const lane = lanes[id % lanes.length];
-    waves.push({ id, atMs, obstacles: [{ lane, kind: id % 4 === 3 ? 'low' : 'high' }], resolved: false });
-  }
-  return waves;
+  return makeAuthoredDodgeWaves()
+    .filter(wave => wave.atMs < durationMs)
+    .map(wave => ({
+      id: wave.id,
+      atMs: wave.atMs,
+      warningAtMs: wave.warningAtMs,
+      obstacles: wave.obstacles.map(obstacle => ({ ...obstacle })),
+      resolved: false,
+    }));
 }
 
 export function configureGameForMode(game: GameEngine, mode: GameMode): void {
@@ -110,6 +117,7 @@ export class ModeEngine {
   score = 0;
   cleared = 0;
   misses = 0;
+  collisions = 0;
   combo = 0;
   bestCombo = 0;
   playerOneScore = 0;
@@ -119,18 +127,24 @@ export class ModeEngine {
   feedbackKind: ModeSnapshot['feedbackKind'] = 'neutral';
   private previous: GestureAnalysis | null = null;
   private readonly sixSeven = new SixSevenRecognizer();
+  private readonly dodge: DodgeArenaRuntime | null;
+  private lastDodgeElapsedMs = 0;
   private lastFeedbackAt = -Infinity;
 
   constructor(readonly mode: GameMode, durationMs: number) {
     this.chart = buildModeChart(mode, durationMs);
+    this.dodge = mode === 'dodge-arena' ? new DodgeArenaRuntime(durationMs) : null;
   }
 
   reset(): void {
     this.score = this.cleared = this.misses = this.combo = this.bestCombo = 0;
+    this.collisions = 0;
     this.playerOneScore = this.playerTwoScore = this.sixSevenCount = 0;
     for (const cue of this.chart) cue.resolved = false;
     this.previous = null;
     this.sixSeven.reset();
+    this.dodge?.reset();
+    this.lastDodgeElapsedMs = 0;
     this.lastFeedbackAt = -Infinity;
     this.feedback = '';
     this.feedbackKind = 'neutral';
@@ -154,11 +168,38 @@ export class ModeEngine {
       this.previous = primary;
       return [];
     }
+    if (this.mode === 'dodge-arena' && this.dodge) {
+      if (!primary.trackingValid) return [];
+      const deltaMs = Math.max(0, elapsedMs - this.lastDodgeElapsedMs);
+      if (deltaMs > 300) {
+        this.lastDodgeElapsedMs = elapsedMs;
+        this.feedback = 'Tracking paused. Find a clear lane when the camera is steady.';
+        this.feedbackKind = 'hint';
+        return [];
+      }
+      const dodgeEvents = this.dodge.update(deltaMs, { lane: primary.lane });
+      const dodge = this.dodge.snapshot();
+      this.lastDodgeElapsedMs = dodge.elapsedMs;
+      this.score = dodge.score;
+      this.cleared = dodge.cleared;
+      this.misses = dodge.misses;
+      this.collisions = dodge.collisions;
+      this.combo = dodge.combo;
+      this.bestCombo = dodge.bestCombo;
+      if (dodgeEvents.includes('hit')) this.setFeedback('Collision. Lean into a different clear lane.', 'hint', elapsedMs);
+      else if (dodgeEvents.includes('clear')) this.setFeedback('Safe lane. Keep the combo going.', 'good', elapsedMs);
+      this.previous = primary;
+      const events: GameEvent[] = [];
+      if (dodgeEvents.includes('hit')) events.push('hit');
+      if (dodgeEvents.includes('clear')) events.push('clear');
+      if (dodgeEvents.includes('finish')) events.push('finish');
+      return events;
+    }
     if (!primary.trackingValid) return [];
     const events: GameEvent[] = [];
     const isPoseRound = this.mode === 'mirror-challenge' || this.mode === 'dance-party' || this.mode === 'dance-duo';
-    const earlyWindowMs = isPoseRound ? 950 : this.mode === 'rhythm-run' ? 2_000 : 700;
-    const lateWindowMs = this.mode === 'rhythm-run' ? 360 : 550;
+    const earlyWindowMs = isPoseRound ? 950 : this.mode === 'rhythm-run' ? RHYTHM_WINDOW_MS : 700;
+    const lateWindowMs = this.mode === 'rhythm-run' ? RHYTHM_WINDOW_MS : 550;
     const activeCue = this.chart.find(item => !item.resolved && elapsedMs >= item.atMs - earlyWindowMs && elapsedMs <= item.atMs + lateWindowMs);
 
     // Expire every missed cue before evaluating the one active cue. Keeping expiry
@@ -209,12 +250,15 @@ export class ModeEngine {
   snapshot(elapsedMs: number): ModeSnapshot {
     const next = this.chart.find(item => !item.resolved) ?? null;
     const isPoseRound = this.mode === 'mirror-challenge' || this.mode === 'dance-party' || this.mode === 'dance-duo';
-    const earlyWindowMs = isPoseRound ? 950 : this.mode === 'rhythm-run' ? 2_000 : 700;
-    const lateWindowMs = this.mode === 'rhythm-run' ? 360 : 550;
+    const earlyWindowMs = isPoseRound ? 950 : this.mode === 'rhythm-run' ? RHYTHM_WINDOW_MS : 700;
+    const lateWindowMs = this.mode === 'rhythm-run' ? RHYTHM_WINDOW_MS : 550;
     const activeCue = next && elapsedMs >= next.atMs - earlyWindowMs && elapsedMs <= next.atMs + lateWindowMs ? next : null;
-    return { score: this.score, cleared: this.cleared, misses: this.misses, combo: this.combo, bestCombo: this.bestCombo,
-      playerOneScore: this.playerOneScore, playerTwoScore: this.playerTwoScore, activeCue, feedback: this.feedback,
-      feedbackKind: this.feedbackKind, sixSevenCount: this.sixSevenCount };
+    // Briefly show the result, then reveal the next preparation / movement cue.
+    const showFeedback = this.mode !== 'rhythm-run'
+      || (!activeCue && elapsedMs - this.lastFeedbackAt < RHYTHM_FEEDBACK_MS);
+    return { score: this.score, cleared: this.cleared, misses: this.misses, collisions: this.collisions, combo: this.combo, bestCombo: this.bestCombo,
+      playerOneScore: this.playerOneScore, playerTwoScore: this.playerTwoScore, activeCue, feedback: showFeedback ? this.feedback : '',
+      feedbackKind: showFeedback ? this.feedbackKind : 'neutral', sixSevenCount: this.sixSevenCount };
   }
 
   private registerHit(cue: ModeCue, elapsedMs: number): boolean {

@@ -10,8 +10,8 @@
     "dev:api": "bun run --filter @motion-runner/api dev",
     "assets": "bun run --filter @motion-runner/web assets",
     "build": "bun run --filter @motion-runner/web build",
-    "check": "bun run --filter @motion-runner/web check",
-    "test": "bun run --filter @motion-runner/web test",
+    "check": "bun run test && bun run --filter @motion-runner/web build && bun run --filter @motion-runner/api check",
+    "test": "bun run --filter @motion-runner/web test && bun run --filter @motion-runner/api test",
     "test:e2e": "bun run --filter @motion-runner/web test:e2e"
   }
 }

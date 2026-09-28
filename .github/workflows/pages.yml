@@ -22,24 +22,23 @@ jobs:
     steps:
       - name: Check out project
         uses: actions/checkout@v4
-      - name: Install Node.js
-        uses: actions/setup-node@v4
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: 22
-          cache: npm
+          bun-version-file: package.json
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
       - name: Install Chromium for browser tests
-        run: npx playwright install --with-deps chromium
+        run: bun x playwright install --with-deps chromium
       - name: Run unit tests and production build
-        run: npm run check
+        run: bun run check
       - name: Run production browser checks
-        run: npm run test:e2e
+        run: bun run test:e2e
       - name: Prepare Pages artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: apps/web/dist
 
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

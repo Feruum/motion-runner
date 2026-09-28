@@ -1,6 +1,9 @@
 node_modules/
+**/node_modules/
 dist/
+apps/web/dist/
 playwright-report/
 test-results/
-.env.local
+.env*
+!.env.example
 .DS_Store

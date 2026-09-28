@@ -1,0 +1,19 @@
+.runner-picker { border: 0; padding: 0; margin: 18px 0 14px; min-width: 0; }
+.runner-picker legend { padding: 0; margin-bottom: 8px; color: #d8e8df; font: 600 11px Outfit, sans-serif; letter-spacing: .06em; }
+.runner-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.runner-choice { display: flex; align-items: center; gap: 9px; border: 1px solid #849c9466; border-radius: 8px; padding: 9px 12px; min-height: 38px; background: #183a3ddd; color: #e7eee9; cursor: pointer; font: 500 12px Outfit, sans-serif; }
+.runner-choice::before { content: ''; width: 9px; height: 9px; flex-shrink: 0; border-radius: 50%; background: var(--runner-color); }
+.runner-choice:hover { background: #345954; }
+.runner-choice[aria-pressed='true'] { border-color: #bce7c5; background: #456358; box-shadow: inset 0 0 0 1px #bce7c544; color: white; }
+.runner-choice:focus-visible { outline: 2px solid #f1c274; outline-offset: 3px; }
+.runner-picker:disabled .runner-choice { cursor: wait; opacity: .65; }
+.runner-choice-status { display: block; min-height: 14px; margin-top: 7px; color: #cfdfd7; font-size: 10px; line-height: 1.4; }
+.stage-welcome { padding-top: 72px; padding-bottom: 38px; }
+.stage-welcome .overlay-inner h2 { font-size: clamp(28px, 3.3vw, 45px); }
+.stage-welcome .overlay-icon { display: none; }
+@media (max-width: 540px) {
+  .stage-welcome { padding-top: 68px; padding-bottom: 28px; }
+  .stage-welcome .overlay-inner h2 { font-size: 29px; }
+  .runner-picker { margin: 12px 0 10px; }
+  .runner-choice { padding: 8px 10px; }
+}

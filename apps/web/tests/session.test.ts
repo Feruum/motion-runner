@@ -18,19 +18,33 @@ describe('Session controller',()=>{
     s.tick(4200,analysis(4200));expect(s.stage).toBe('COUNTDOWN');
     s.tick(4300,analysis(4300));expect(s.stage).toBe('PLAYING'); expect(s.game.elapsedMs).toBe(0);
   });
-  it('holds the course through short tracking gaps and uses a short recovery countdown',()=>{
+  it('requires one second of stable tracking with hands down before the recovery countdown',()=>{
     const s=new SessionController();s.stage='PLAYING';s.tick(0,analysis(0));s.tick(100,analysis(100));
     s.tick(150,analysis(150,{trackingValid:false}));expect(s.stage).toBe('PLAYING');
     const frozen=s.game.elapsedMs;
     s.tick(400,analysis(400,{trackingValid:false}));expect(s.stage).toBe('PAUSED');
     expect(s.game.elapsedMs).toBe(frozen);
-    for(let t=450;t<=850;t+=50)s.tick(t,analysis(t,{handsDown:false,handsUp:true}));
+    for(let t=450;t<=1450;t+=50)s.tick(t,analysis(t,{handsDown:false,handsUp:true}));
+    expect(s.stage).toBe('PAUSED');
+    for(let t=1500;t<2500;t+=50)s.tick(t,analysis(t));
+    expect(s.stage).toBe('PAUSED');
+    s.tick(2500,analysis(2500));
     expect(s.stage).toBe('COUNTDOWN');
-    expect(s.countdownEndsAt).toBe(1850);
-    s.tick(1850,analysis(1850,{handsDown:false,handsUp:true,jumpTriggered:true}));
+    expect(s.countdownEndsAt).toBe(3500);
+    s.tick(3500,analysis(3500,{jumpTriggered:true}));
     expect(s.stage).toBe('PLAYING');expect(s.game.elapsedMs).toBe(frozen);
-    s.tick(1866,analysis(1850,{handsDown:false,handsUp:true,jumpTriggered:true}));
+    s.tick(3550,analysis(3500,{jumpTriggered:true}));
     expect(s.game.jumpStartedMs).toBe(-Infinity);
+  });
+  it('restarts recovery stability after tracking drops again',()=>{
+    const s=new SessionController();s.stage='PAUSED';s.game.paused=true;
+    for(let t=0;t<=500;t+=50)s.tick(t,analysis(t));
+    expect(s.stage).toBe('PAUSED');
+    s.tick(550,analysis(550,{trackingValid:false}));
+    for(let t=600;t<1600;t+=50)s.tick(t,analysis(t));
+    expect(s.stage).toBe('PAUSED');
+    s.tick(1600,analysis(1600));
+    expect(s.stage).toBe('COUNTDOWN');
   });
   it('detects stale results even when the last pose was valid',()=>{
     const s=new SessionController();s.stage='PLAYING';s.tick(0,analysis(0));s.tick(400,analysis(0));expect(s.stage).toBe('PAUSED');

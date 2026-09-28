@@ -75,7 +75,7 @@ export class SessionController {
       return this.stage;
     }
     if(this.stage==='PAUSED') {
-      const recovered=fresh&&!documentHiddenSafe();
+      const recovered=fresh&&pose.handsDown&&!documentHiddenSafe();
       if(!recovered){this.recoverySince=-1;return this.stage;}
       if(this.recoverySince<0)this.recoverySince=now;
       if(now-this.recoverySince>=C.recoveryMs)this.beginCountdown(now,false);

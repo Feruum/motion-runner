@@ -5,6 +5,8 @@ import { createHash } from 'node:crypto';
 const root = path.resolve('public');
 const kay = 'https://raw.githubusercontent.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0/672074b73ba276876a19e8816ecdc5241817ab47/';
 const platform = 'https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-platformer/3D/platformer/';
+const kayAnimations = 'https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-character-animations/3D/characters/Animations/gltf/Rig_Medium/';
+const kayAnimationsLicense = 'https://raw.githubusercontent.com/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-character-animations/3D/characters/License.txt';
 const records = [];
 async function download(url, relative) {
   const dest = path.join(root, relative);
@@ -26,6 +28,11 @@ await download('https://storage.googleapis.com/mediapipe-models/pose_landmarker/
 await download(kay + 'addons/kaykit_character_pack_adventures/Characters/gltf/Rogue_Hooded.glb', 'assets/character/Rogue_Hooded.glb');
 await download(kay + 'addons/kaykit_character_pack_adventures/Characters/gltf/rogue_texture.png', 'assets/character/rogue_texture.png');
 await download(kay + 'LICENSE.txt', 'assets/character/LICENSE.txt');
+for (const set of ['MovementBasic', 'General', 'Simulation']) {
+  const file = `Rig_Medium_${set}.glb`;
+  await download(kayAnimations + file, `assets/animations/${file}`);
+}
+await download(kayAnimationsLicense, 'assets/animations/LICENSE.txt');
 const models = [
   'blue/platform_4x4x1_blue', 'blue/arch_wide_blue', 'blue/flag_A_blue',
   'red/barrier_3x1x1_red', 'red/barrier_3x1x4_red', 'yellow/star_yellow',

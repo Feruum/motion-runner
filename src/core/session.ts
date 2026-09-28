@@ -86,7 +86,7 @@ export class SessionController {
   startLoading(){if(this.stage==='WELCOME'||this.stage==='ERROR')this.stage='LOADING';}
   cameraReady(){if(this.stage==='LOADING')this.stage='CALIBRATION';}
   cameraFailed(){this.stage='ERROR';this.game.paused=true;}
-  restartSetup(){this.game.reset();this.stage='LOADING';this.tutorialIndex=0;this.awaitingNeutral=false;this.tutorialSuccess=false;this.startArmed=false;this.lastValidAt=-Infinity;this.lastTickAt=-1;this.lastJumpEventAt=-1;this.tutorialMatchSince=-1;}
+  restartSetup(){this.game.reset();this.stage='LOADING';this.tutorialIndex=0;this.awaitingNeutral=false;this.tutorialSuccess=false;this.startArmed=false;this.startSince=-1;this.countdownEndsAt=-1;this.recoverySince=-1;this.lastValidAt=-Infinity;this.lastTickAt=-1;this.lastJumpEventAt=-1;this.tutorialMatchSince=-1;}
   setTabHidden(hidden:boolean){if(hidden&&this.stage==='PLAYING')this.pause();}
   dismissPause(){if(this.stage==='PAUSED'){this.game.paused=true;}}
 }

@@ -12,13 +12,15 @@
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
     "test:e2e": "bun run build && playwright test",
+    "test:race": "playwright test --config playwright.race.config.ts",
     "check": "bun run test && bun run build"
   },
   "dependencies": {
-    "@motion-runner/game": "workspace:*",
     "@fontsource/dm-sans": "5.3.0",
     "@fontsource/outfit": "5.3.0",
     "@mediapipe/tasks-vision": "1.0.1",
+    "@motion-runner/game": "workspace:*",
+    "blobatar": "2.7.0",
     "motion": "13.4.4",
     "postprocessing": "6.39.5",
     "three": "0.186.1",

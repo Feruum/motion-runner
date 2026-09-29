@@ -1,5 +1,14 @@
 .runner-picker { border: 0; padding: 0; margin: 18px 0 14px; min-width: 0; }
 .runner-picker legend { padding: 0; margin-bottom: 8px; color: #d8e8df; font: 600 11px Outfit, sans-serif; letter-spacing: .06em; }
+.runner-profile { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 10px; margin: 0 0 11px; padding: 9px 10px; border: 1px solid #a8bcb044; border-radius: 10px; background: linear-gradient(120deg, #24483fe0, #17373ddc); }
+.runner-profile-avatar { display: block; width: 44px; height: 44px; border-radius: 50%; background: #e1edcf; object-fit: cover; }
+.runner-profile-copy { display: grid; gap: 4px; min-width: 0; }
+.runner-profile-kicker, .runner-profile-best > span { color: #a9c4b8; font: 600 8px Outfit, sans-serif; letter-spacing: .1em; }
+.runner-profile-name-label { display: grid; gap: 3px; color: #d8e8df; font: 500 9px Outfit, sans-serif; }
+.runner-profile-name { width: 100%; min-width: 0; border: 0; border-bottom: 1px solid #a8bcb066; border-radius: 0; padding: 1px 0 3px; background: transparent; color: #fff; font: 600 14px Outfit, sans-serif; outline: none; }
+.runner-profile-name:focus-visible { border-bottom-color: #f1c274; box-shadow: 0 1px #f1c274; }
+.runner-profile-best { display: grid; gap: 3px; justify-items: end; padding-left: 8px; text-align: right; }
+.runner-profile-best strong { color: #f1cf84; font: 700 17px Outfit, sans-serif; }
 .runner-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
 .runner-choice { display: flex; align-items: center; gap: 9px; border: 1px solid #849c9466; border-radius: 8px; padding: 9px 12px; min-height: 38px; background: #183a3ddd; color: #e7eee9; cursor: pointer; font: 500 12px Outfit, sans-serif; }
 .runner-choice::before { content: ''; width: 9px; height: 9px; flex-shrink: 0; border-radius: 50%; background: var(--runner-color); }
@@ -15,5 +24,8 @@
   .stage-welcome { padding-top: 68px; padding-bottom: 28px; }
   .stage-welcome .overlay-inner h2 { font-size: 29px; }
   .runner-picker { margin: 12px 0 10px; }
+  .runner-profile { grid-template-columns: 40px minmax(0, 1fr) auto; gap: 8px; padding: 8px; }
+  .runner-profile-avatar { width: 40px; height: 40px; }
+  .runner-profile-best { padding-left: 4px; }
   .runner-choice { padding: 8px 10px; }
 }

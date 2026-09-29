@@ -11,6 +11,7 @@ Motion Runner combines original gesture, session and game logic with the followi
 | [postprocessing](https://github.com/pmndrs/postprocessing) | 6.39.5 | Zlib | SMAA and low-intensity bloom |
 | [three.quarks](https://github.com/Alchemist0823/three.quarks) | 0.17.1 | MIT | Short landing and clear particles |
 | [Motion](https://github.com/motiondivision/motion) | 13.4.4 | MIT | Score micro-animation |
+| [Blobatar](https://github.com/Alain00/blobatar) | 2.7.0 | MIT | Deterministic local player profile avatars |
 | [Outfit](https://github.com/Outfitio/Outfit-Fonts) | 5.3.0 | SIL Open Font License 1.1 | Display typography |
 | [DM Sans](https://github.com/googlefonts/dm-fonts) | 5.3.0 | SIL Open Font License 1.1 | Interface typography |
 
@@ -29,6 +30,16 @@ The blue platform, arch and flag; red low/high barriers; and yellow star models 
 ### KayKit Character Animations
 
 The [KayKit Character Animations](https://kaylousberg.itch.io/kaykit-character-animations) pack is downloaded separately to `apps/web/public/assets/animations/`. Motion Runner uses `Idle_A`, `Running_A`, `Jump_Full_Short`, `Hit_A`, and `Cheering` (mapped to the local action name `Cheer`) from the `Rig_Medium_General`, `Rig_Medium_MovementBasic`, and `Rig_Medium_Simulation` GLB sets. Their bone names match the Rogue skeleton, so Three.js applies these clips directly to the character. The files and CC0 license notice are pinned to the same mirror revision above; the supplied notice is retained at `apps/web/public/assets/animations/LICENSE.txt`.
+
+### KayKit landscape assets
+
+The 18 scenery models in `apps/web/public/assets/environment/` are ready-made KayKit assets by Kay Lousberg, licensed under CC0-1.0:
+
+- [KayKit Forest Nature Pack](https://kaylousberg.itch.io/kaykit-forest): two tree shapes, grass, bushes and rocks from the free Color1 set.
+- [KayKit Medieval Hexagon Pack](https://kaylousberg.itch.io/kaykit-medieval-hexagon): houses, windmill, castle, hills, mountains and clouds.
+- [KayKit Dungeon Pack](https://kaylousberg.itch.io/kaykit-dungeon-pack): columns, arches, banners, torch, wooden and stone floor modules.
+
+`apps/web/scripts/environment-assets.mjs` pins each download to mirror revision `f8206b38e4355a8b2a490e3032000d2a84883a0f`. Each pack's supplied `License.txt` is retained alongside its files. External glTF buffers and palette textures are served locally. The environment catalog identifies the exact selected files; the shared asset manifest records their sources and SHA-256 hashes. Composition, model instancing, biome transitions, windmill rotation, water highlights, lighting and finish placement are original presentation code. No paid expansion assets are used.
 
 ## Pose model
 

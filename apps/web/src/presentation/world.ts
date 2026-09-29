@@ -7,6 +7,8 @@ import { CONFIG as C } from '@motion-runner/game';
 import type { GameEngine, GestureAnalysis, Stage } from '@motion-runner/game';
 import { CHARACTERS } from './characters';
 import type { CharacterId } from './characters';
+import { JourneyEnvironment } from './environment';
+import { wrapSceneryZ } from './route';
 
 const laneX = [-2.75, 0, 2.75];
 const trackTileLength = 5.2;
@@ -18,7 +20,8 @@ export class RunnerWorld {
   private readonly characterModels = new Map<CharacterId, { scene: THREE.Object3D; animations: THREE.AnimationClip[] }>();
   private characterClips: THREE.AnimationClip[] = [];
   private readonly scene = new THREE.Scene();
-  private readonly camera = new THREE.PerspectiveCamera(37, 1, 0.1, 100);
+  private readonly camera = new THREE.PerspectiveCamera(44, 1, 0.1, 240);
+  private readonly environment: JourneyEnvironment;
   private readonly renderer: THREE.WebGLRenderer;
   private composer: EffectComposer | null = null;
   private readonly loader = new GLTFLoader();
@@ -42,13 +45,11 @@ export class RunnerWorld {
   );
   private readonly lowFallback = new THREE.Mesh(
     new THREE.BoxGeometry(2.5, 0.52, 0.75),
-    new THREE.MeshStandardMaterial({ color: 0xf17663, roughness: 0.4 }),
+    new THREE.MeshStandardMaterial({ color: 0x55e2bf, roughness: 0.4 }),
   );
   private platformModel: THREE.Object3D | null = null;
   private lowModel: THREE.Object3D | null = null;
   private highModel: THREE.Object3D | null = null;
-  private archModel: THREE.Object3D | null = null;
-  private flagModel: THREE.Object3D | null = null;
   private starModel: THREE.Object3D | null = null;
   private character: THREE.Object3D | null = null;
   private mixer: THREE.AnimationMixer | null = null;
@@ -62,10 +63,14 @@ export class RunnerWorld {
   private lastSuccessCount = 0;
   private lastHitCount = 0;
   private previousStage: Stage = 'WELCOME';
+  private wasAirborne = false;
+  private lastFootstepMs = 0;
+  private reducedQuality = false;
+  private qualityFrames = 0;
+  private qualityFrameTime = 0;
   private previewTimeMs = 0;
   private previewJumpStartedMs = -Infinity;
   private previewPoseTime = -1;
-  private readonly scratch = new THREE.Vector3();
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -82,33 +87,51 @@ export class RunnerWorld {
     this.scene.fog = new THREE.Fog(0x20333c, 25, 60);
     this.scene.add(this.root);
     this.root.add(this.floor, this.moving, this.actor, this.particleBatch);
-    this.buildLights();
-    this.buildBackdrop();
+    this.environment = new JourneyEnvironment(this.scene, canvas);
     this.buildTrackFallback();
-    this.buildOverhead();
     this.buildParticles();
-    this.camera.position.set(0, 5.4, 10.2);
-    this.camera.lookAt(0, 0.65, -4.6);
+    this.camera.position.set(0, 4.8, 10.8);
+    this.camera.lookAt(0, 1.4, -18);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas.parentElement ?? canvas);
     this.resize();
-    this.ready = this.loadModels();
+    this.ready = Promise.all([this.loadModels(), this.environment.ready]).then(() => undefined);
     this.render();
   }
 
   update(stage: Stage, game: GameEngine, frameDeltaMs: number, pose?: GestureAnalysis): void {
     if (this.destroyed) return;
-    if (this.character) this.character.rotation.y = stage === 'WELCOME' ? 0 : Math.PI;
+    if (this.character) this.character.rotation.y = stage === 'WELCOME' || stage === 'RESULTS' ? 0 : Math.PI;
     if (game.elapsedMs < this.elapsedMs || (stage === 'COUNTDOWN' && this.previousStage !== stage && game.elapsedMs === 0)) {
       this.currentJumpMs = -Infinity;
       this.reactionUntilMs = -Infinity;
       this.lastHitCount = 0;
       this.lastSuccessCount = 0;
+      this.lastFootstepMs = 0;
+      this.wasAirborne = false;
     }
+    if (stage === 'RESULTS' && this.previousStage !== stage) this.burst(0, 2, C.runnerZ, 36);
     this.previousStage = stage;
     this.elapsedMs = game.elapsedMs;
-    const frozen = stage === 'PAUSED' || (stage === 'COUNTDOWN' && game.paused);
+    const frozen = stage === 'PAUSED' || ((stage === 'COUNTDOWN' || stage === 'PLAYING') && game.paused);
     const dt = frozen ? 0 : Math.min(0.1, Math.max(0, frameDeltaMs / 1000));
+    if (!this.reducedQuality && this.canvas.dataset.environment === 'ready' && frameDeltaMs > 0 && !document.hidden) {
+      this.qualityFrames++;
+      this.qualityFrameTime += Math.min(100, frameDeltaMs);
+      if (this.qualityFrames >= 180) {
+        if (this.qualityFrameTime / this.qualityFrames > 40) {
+          this.reducedQuality = true;
+          this.composer?.dispose();
+          this.composer = null;
+          this.renderer.setPixelRatio(1);
+          this.environment.setReducedQuality(true);
+          this.canvas.dataset.quality = 'performance';
+          this.resize();
+        }
+        this.qualityFrames = 0;
+        this.qualityFrameTime = 0;
+      }
+    }
     const preview = stage === 'TUTORIAL' || stage === 'READY';
     if (preview) {
       this.previewTimeMs += dt * 1000;
@@ -152,7 +175,14 @@ export class RunnerWorld {
     }
 
     this.mixer?.update(dt);
-    this.updateTrack(running ? game.elapsedMs : 0);
+    this.environment.update(stage, game.elapsedMs, game.durationMs, dt);
+    this.updateTrack(running || stage === 'RESULTS' ? game.elapsedMs : 0);
+    if (this.wasAirborne && !airborne && !frozen) this.burst(this.actor.position.x, .08, C.runnerZ, 12);
+    this.wasAirborne = airborne;
+    if (stage === 'PLAYING' && !airborne && game.elapsedMs - this.lastFootstepMs > 330) {
+      this.burst(this.actor.position.x, .05, C.runnerZ, 2);
+      this.lastFootstepMs = game.elapsedMs;
+    }
     this.updateObstacles(stage, game);
     this.particleBatch.update(dt);
     if (game.cleared > this.lastSuccessCount) {
@@ -191,6 +221,7 @@ export class RunnerWorld {
   dispose(): void {
     this.destroyed = true;
     this.resizeObserver.disconnect();
+    this.environment.dispose();
     this.composer?.dispose();
     for (const effect of this.particles) effect.system.dispose();
     this.particleBatch.dispose();
@@ -214,68 +245,8 @@ export class RunnerWorld {
     this.characterModels.clear();
   }
 
-  private buildLights() {
-    this.scene.add(new THREE.HemisphereLight(0xdaf5ee, 0x344858, 2.15));
-    const key = new THREE.DirectionalLight(0xffd2a2, 3.25);
-    key.position.set(-7, 12, 7);
-    key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
-    key.shadow.blurSamples = 4;
-    key.shadow.radius = 2;
-    key.shadow.camera.left = -13; key.shadow.camera.right = 13;
-    key.shadow.camera.top = 13; key.shadow.camera.bottom = -12;
-    key.shadow.bias = -0.00035;
-    key.shadow.normalBias = 0.045;
-    this.scene.add(key);
-    const fill = new THREE.DirectionalLight(0x7ad6d1, 1.05);
-    fill.position.set(8, 5, -11);
-    this.scene.add(fill);
-  }
-
-  private buildBackdrop() {
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(200, 200),
-      new THREE.MeshStandardMaterial({ color: 0x22363a, roughness: 0.92, metalness: 0.02 }),
-    );
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.set(0, -0.55, -65);
-    ground.receiveShadow = true;
-    this.floor.add(ground);
-
-    const palette = [0x3c5558, 0x536864, 0x6b7161, 0x36545e, 0x8b7768];
-    let seed = 23;
-    const random = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
-    for (let i = 0; i < 46; i++) {
-      const side = i % 2 ? 1 : -1;
-      const depth = -7 - Math.floor(i / 2) * 2.5 - random() * 5;
-      const width = 1.4 + random() * 2.5;
-      const height = 1.3 + random() * 5;
-      const building = new THREE.Mesh(
-        new THREE.BoxGeometry(width, height, 1.8 + random() * 2),
-        new THREE.MeshStandardMaterial({ color: palette[Math.floor(random() * palette.length)], roughness: 0.86 }),
-      );
-      building.position.set(side * (7.8 + random() * 7), height / 2 - 0.55, depth);
-      building.castShadow = true;
-      building.receiveShadow = true;
-      this.floor.add(building);
-      const awning = new THREE.Mesh(
-        new THREE.BoxGeometry(width * 0.65, 0.13, 0.16),
-        new THREE.MeshStandardMaterial({ color: i % 3 === 0 ? 0xf28a71 : 0xe4c37e, roughness: 0.54 }),
-      );
-      awning.position.set(building.position.x, building.position.y + height * 0.17, building.position.z + 0.92);
-      this.floor.add(awning);
-    }
-    const sea = new THREE.Mesh(
-      new THREE.PlaneGeometry(200, 80),
-      new THREE.MeshBasicMaterial({ color: 0x314f50 }),
-    );
-    sea.rotation.x = -Math.PI / 2;
-    sea.position.set(0, -0.58, -108);
-    this.floor.add(sea);
-  }
-
   private buildTrackFallback() {
-    for (let z = 4; z > -24; z -= trackTileLength) {
+    for (let z = 4; z > -94; z -= trackTileLength) {
       for (const x of laneX) {
         const tile = this.platformFallback.clone();
         tile.position.set(x, -0.225, z);
@@ -287,45 +258,21 @@ export class RunnerWorld {
     }
     for (const x of [-1.375, 1.375]) {
       const stripe = new THREE.Mesh(
-        new THREE.BoxGeometry(0.035, 0.035, 38),
+        new THREE.BoxGeometry(0.045, 0.04, 104),
         new THREE.MeshStandardMaterial({ color: 0xc8eee0, emissive: 0x36685f, emissiveIntensity: 0.18, roughness: 0.3 }),
       );
-      stripe.position.set(x, -0.015, -8);
+      stripe.position.set(x, .04, -42);
       this.moving.add(stripe);
     }
-    for (const x of [-5.65, 5.65]) {
+    for (const x of [-4.4, 4.4]) {
       const rail = new THREE.Mesh(
-        new THREE.BoxGeometry(0.22, 0.68, 36),
-        new THREE.MeshStandardMaterial({ color: 0x41686a, roughness: 0.48, metalness: 0.12 }),
+        new THREE.BoxGeometry(0.2, 0.22, 104),
+        new THREE.MeshStandardMaterial({ color: 0x719894, roughness: 0.8 }),
       );
-      rail.position.set(x, 0.12, -8);
+      rail.position.set(x, -.07, -42);
       rail.castShadow = true;
       rail.receiveShadow = true;
       this.moving.add(rail);
-    }
-  }
-
-  private buildOverhead() {
-    for (const z of [-5, -15, -25]) {
-      const arch = new THREE.Group();
-      const material = new THREE.MeshStandardMaterial({ color: 0x7fc7b5, roughness: 0.54, metalness: 0.05 });
-      for (const x of [-5.15, 5.15]) {
-        const post = new THREE.Mesh(new THREE.BoxGeometry(0.23, 4.3, 0.23), material);
-        post.position.set(x, 1.9, z);
-        post.castShadow = true;
-        arch.add(post);
-      }
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(10.55, 0.24, 0.34), material);
-      cap.position.set(0, 4.08, z);
-      arch.add(cap);
-      const sign = new THREE.Mesh(
-        new THREE.BoxGeometry(2.1, 0.78, 0.16),
-        new THREE.MeshStandardMaterial({ color: 0xf3bd6f, roughness: 0.4 }),
-      );
-      sign.position.set(0, 3.56, z);
-      sign.castShadow = true;
-      arch.add(sign);
-      this.moving.add(arch);
     }
   }
 
@@ -367,8 +314,6 @@ export class RunnerWorld {
       ['platform_4x4x1_blue', 'assets/platformer/blue/platform_4x4x1_blue.gltf'],
       ['barrier_3x1x1_red', 'assets/platformer/red/barrier_3x1x1_red.gltf'],
       ['barrier_3x1x4_red', 'assets/platformer/red/barrier_3x1x4_red.gltf'],
-      ['arch_wide_blue', 'assets/platformer/blue/arch_wide_blue.gltf'],
-      ['flag_A_blue', 'assets/platformer/blue/flag_A_blue.gltf'],
       ['star_yellow', 'assets/platformer/yellow/star_yellow.gltf'],
       ['Rogue_Hooded', 'assets/character/Rogue_Hooded.glb'],
       ...CHARACTERS.filter(character => character.id !== 'rogue').map(character => [character.model, `assets/character/${character.model}.glb`] as [string, string]),
@@ -387,11 +332,8 @@ export class RunnerWorld {
     this.platformModel = models.get('platform_4x4x1_blue')?.scene ?? null;
     this.lowModel = models.get('barrier_3x1x1_red')?.scene ?? null;
     this.highModel = models.get('barrier_3x1x4_red')?.scene ?? null;
-    this.archModel = models.get('arch_wide_blue')?.scene ?? null;
-    this.flagModel = models.get('flag_A_blue')?.scene ?? null;
     this.starModel = models.get('star_yellow')?.scene ?? null;
     this.applyTrackModel();
-    this.applyOverheadModels();
     const characterGltf = models.get('Rogue_Hooded');
     for (const character of CHARACTERS) {
       const model = models.get(character.model);
@@ -437,7 +379,7 @@ export class RunnerWorld {
       const fallback = this.tiles[i];
       const platform = this.platformModel.clone(true);
       platform.position.copy(fallback.position);
-      platform.scale.set(1, 0.5, 1.3);
+      platform.scale.set(.69, .18, 1.3);
       platform.position.y -= new THREE.Box3().setFromObject(platform).max.y;
       platform.traverse(object => {
         if (object instanceof THREE.Mesh) { object.castShadow = true; object.receiveShadow = true; }
@@ -445,28 +387,6 @@ export class RunnerWorld {
       fallback.parent?.remove(fallback);
       this.moving.add(platform);
       this.tiles[i] = platform;
-    }
-  }
-
-  private applyOverheadModels() {
-    for (const object of this.moving.children) {
-      if (!(object instanceof THREE.Group) || object.children.length !== 3) continue;
-      if (!this.archModel && !this.flagModel) break;
-      const z = object.children[0].position.z;
-      const arch = this.archModel?.clone(true);
-      if (arch) {
-        arch.position.set(0, 0, z);
-        arch.scale.set(1.42, 1.12, 1);
-        arch.traverse(child => { if (child instanceof THREE.Mesh) child.castShadow = true; });
-        object.visible = false;
-        this.moving.add(arch);
-      }
-      const flag = this.flagModel?.clone(true);
-      if (flag) {
-        flag.position.set(4.76, 1.5, z);
-        flag.scale.set(0.8, 0.8, 0.8);
-        this.moving.add(flag);
-      }
     }
   }
 
@@ -526,12 +446,12 @@ export class RunnerWorld {
   }
 
   private updateTrack(elapsed: number) {
-    const scroll = (elapsed * 0.00145) % trackTileLength;
+    const scroll = elapsed * .0055;
     const ringLength = Math.ceil(this.tiles.length / laneX.length) * trackTileLength;
     for (let i = 0; i < this.tiles.length; i++) {
       const lane = i % laneX.length;
       const segment = Math.floor(i / laneX.length);
-      const z = 4 - ((segment * trackTileLength + scroll) % ringLength);
+      const z = wrapSceneryZ(4 - segment * trackTileLength, scroll, 9.2, 9.2 - ringLength);
       this.tiles[i].position.x = laneX[lane];
       this.tiles[i].position.z = z;
     }
@@ -548,7 +468,7 @@ export class RunnerWorld {
     const active = new Set<number>();
     for (const wave of game.waves) {
       if (!visible) continue;
-      const start = wave.atMs - C.wavePreviewMs;
+      const start = wave.warningAtMs ?? wave.atMs - C.wavePreviewMs;
       if (game.elapsedMs < start || game.elapsedMs > wave.atMs + C.obstacleExitMs) continue;
       active.add(wave.id);
       let group = this.obstacleGroups.get(wave.id);
@@ -565,6 +485,9 @@ export class RunnerWorld {
           model.position.y -= new THREE.Box3().setFromObject(model).min.y;
           model.userData.obstacleIndex = index;
           model.traverse(child => { if (child instanceof THREE.Mesh) { child.castShadow = true; child.receiveShadow = true; } });
+          if (obstacle.kind === 'low') model.traverse(child => {
+            if (child instanceof THREE.Mesh) child.material = this.lowFallback.material;
+          });
           group!.add(model);
           if (this.starModel && wave.id % 3 === 1 && index === 0) {
             const star = this.starModel.clone(true);
@@ -578,7 +501,8 @@ export class RunnerWorld {
         this.obstacleGroups.set(wave.id, group);
       }
       if (!group) continue;
-      const progress = (game.elapsedMs - start) / C.wavePreviewMs;
+      const previewDuration = wave.atMs - start;
+      const progress = (game.elapsedMs - start) / previewDuration;
       group.position.z = C.obstacleSpawnZ + progress * (C.runnerZ - C.obstacleSpawnZ);
       group.children.forEach((child, index) => {
         if (child.userData.pickup) {
@@ -598,7 +522,7 @@ export class RunnerWorld {
 
   private render() {
     if (this.destroyed) return;
-    if (!this.composer && this.renderer.capabilities.isWebGL2) {
+    if (!this.composer && !this.reducedQuality && this.renderer.capabilities.isWebGL2) {
       try {
         this.composer = new EffectComposer(this.renderer);
         this.composer.addPass(new RenderPass(this.scene, this.camera));

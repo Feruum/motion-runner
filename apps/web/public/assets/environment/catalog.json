@@ -1,0 +1,74 @@
+[
+  {
+    "id": "oak",
+    "path": "assets/environment/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Tree_1_A_Color1.gltf"
+  },
+  {
+    "id": "pine",
+    "path": "assets/environment/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Tree_2_A_Color1.gltf"
+  },
+  {
+    "id": "bush",
+    "path": "assets/environment/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Bush_1_A_Color1.gltf"
+  },
+  {
+    "id": "rock",
+    "path": "assets/environment/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Rock_1_A_Color1.gltf"
+  },
+  {
+    "id": "grass",
+    "path": "assets/environment/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Grass_1_A_Color1.gltf"
+  },
+  {
+    "id": "cloud",
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/decoration/nature/cloud_big.gltf"
+  },
+  {
+    "id": "mountain",
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/decoration/nature/mountain_A_grass.gltf"
+  },
+  {
+    "id": "hill",
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/decoration/nature/hills_A.gltf"
+  },
+  {
+    "id": "house",
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/building_home_A_blue.gltf"
+  },
+  {
+    "id": "houseTall",
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/building_home_B_blue.gltf"
+  },
+  {
+    "id": "windmill",
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/building_windmill_blue.gltf"
+  },
+  {
+    "id": "castle",
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/building_castle_blue.gltf"
+  },
+  {
+    "id": "column",
+    "path": "assets/environment/kaykit-dungeon/3D/dungeon/Assets/gltf/column.gltf"
+  },
+  {
+    "id": "arch",
+    "path": "assets/environment/kaykit-dungeon/3D/dungeon/Assets/gltf/wall_arched.gltf"
+  },
+  {
+    "id": "banner",
+    "path": "assets/environment/kaykit-dungeon/3D/dungeon/Assets/gltf/banner_blue.gltf"
+  },
+  {
+    "id": "torch",
+    "path": "assets/environment/kaykit-dungeon/3D/dungeon/Assets/gltf/torch_lit.gltf"
+  },
+  {
+    "id": "woodFloor",
+    "path": "assets/environment/kaykit-dungeon/3D/dungeon/Assets/gltf/floor_wood_large.gltf"
+  },
+  {
+    "id": "stoneFloor",
+    "path": "assets/environment/kaykit-dungeon/3D/dungeon/Assets/gltf/floor_tile_large.gltf"
+  }
+]

@@ -1,5 +1,31 @@
 import { expect, test } from '@playwright/test';
 
+test('saves the local runner profile name and renders its deterministic avatar', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('motion-runner-best', '42'));
+  await page.goto('.');
+
+  const profile = page.getByRole('group', { name: 'Runner profile' });
+  const name = profile.getByLabel('Runner name');
+  const avatar = profile.locator('.runner-profile-avatar');
+
+  await expect(name).toHaveValue('Runner');
+  await expect(profile.getByText('42', { exact: true })).toBeVisible();
+  await expect(profile.getByRole('img', { name: 'Runner avatar' })).toBeVisible();
+  await expect(avatar).toHaveAttribute('src', /^data:image\/svg\+xml/);
+
+  const originalAvatar = await avatar.getAttribute('src');
+  await name.fill('Mira');
+  await expect(avatar).toHaveAttribute('alt', 'Mira avatar');
+  await expect(avatar).not.toHaveAttribute('src', originalAvatar!);
+  const updatedAvatar = await avatar.getAttribute('src');
+
+  await page.reload();
+  const savedProfile = page.getByRole('group', { name: 'Runner profile' });
+  await expect(savedProfile.getByLabel('Runner name')).toHaveValue('Mira');
+  await expect(savedProfile.getByRole('img', { name: 'Mira avatar' })).toHaveAttribute('src', updatedAvatar!);
+  await expect(savedProfile.getByText('42', { exact: true })).toBeVisible();
+});
+
 test('switches between four animated KayKit runners before camera setup', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));

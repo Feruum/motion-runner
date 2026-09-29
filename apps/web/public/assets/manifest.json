@@ -163,5 +163,220 @@
     "path": "assets/platformer/LICENSE.txt",
     "source": "https://raw.githubusercontent.com/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-platformer/3D/platformer/License.txt",
     "sha256": "ae2cff1491f4ae5d847a641e14c2e335777845d11b07c25b6f8a10bd4bf14e69"
+  },
+  {
+    "path": "assets/environment/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Tree_1_A_Color1.gltf",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Tree_1_A_Color1.gltf",
+    "sha256": "9d972eba9d61fc563cb7c3248f1be057190859ce2554ad2032df27c3d09e06c6"
+  },
+  {
+    "path": "assets/environment/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Tree_1_A_Color1.bin",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Tree_1_A_Color1.bin",
+    "sha256": "96e74161a6673316335777e133d065bcd23b3535da52fb7ee8a1e0b4fade97bb"
+  },
+  {
+    "path": "assets/environment/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/forest_texture.png",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/forest_texture.png",
+    "sha256": "4e116d40a273b72af075f2a1f1250fa6bc3330643aadef0c969a654c8cdc8549"
+  },
+  {
+    "path": "assets/environment/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Tree_2_A_Color1.gltf",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Tree_2_A_Color1.gltf",
+    "sha256": "793570b93cd350b935bc88c766317675890f102d157965d2aca3d8daef5ee49b"
+  },
+  {
+    "path": "assets/environment/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Tree_2_A_Color1.bin",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Tree_2_A_Color1.bin",
+    "sha256": "fd413ad809ff30939faf1190194654892066aba94f67ec6f96ce257fa5b34e35"
+  },
+  {
+    "path": "assets/environment/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Bush_1_A_Color1.gltf",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Bush_1_A_Color1.gltf",
+    "sha256": "bc6cf33dbed296a181d8afbd82ffe1c44ee5e57cb095f9efdf4b63e93c165b70"
+  },
+  {
+    "path": "assets/environment/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Bush_1_A_Color1.bin",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Bush_1_A_Color1.bin",
+    "sha256": "a23e69b15bb25e70408d80ec8fabef4a090674a35b32788a82c1538b3116c27f"
+  },
+  {
+    "path": "assets/environment/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Rock_1_A_Color1.gltf",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Rock_1_A_Color1.gltf",
+    "sha256": "ca24326b9c24556227c68df64933122f34a972cd38b6e95c53353fefa97dbc80"
+  },
+  {
+    "path": "assets/environment/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Rock_1_A_Color1.bin",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Rock_1_A_Color1.bin",
+    "sha256": "aaf422fe8b6ea471eb520425f302f9e7523e2686a9c5988fb4e7750ad6e9b483"
+  },
+  {
+    "path": "assets/environment/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Grass_1_A_Color1.gltf",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Grass_1_A_Color1.gltf",
+    "sha256": "58686904164d636e8731544fbb6911bf1ebc068841fe6c127f0c509b1449212b"
+  },
+  {
+    "path": "assets/environment/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Grass_1_A_Color1.bin",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-forest-nature/3D/nature/Assets/gltf/Color1/Grass_1_A_Color1.bin",
+    "sha256": "d293510be3ca4a6062dc305c22a143ba134fc49af65aaba064cc8f8d868d6c6e"
+  },
+  {
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/decoration/nature/cloud_big.gltf",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/decoration/nature/cloud_big.gltf",
+    "sha256": "de414aab3585db0e5728c43c074941c875cb4b89e13d59992208fa2bcc777fb6"
+  },
+  {
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/decoration/nature/cloud_big.bin",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/decoration/nature/cloud_big.bin",
+    "sha256": "5868ebf6be7315cb9221c929c202e7177d44cbe97852e71ae957c86bba22bd57"
+  },
+  {
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/decoration/nature/hexagons_medieval.png",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/decoration/nature/hexagons_medieval.png",
+    "sha256": "5301a06866ba3be68dcc14cc429bd6d0f69004b72884283715d7e233f2e9782e"
+  },
+  {
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/decoration/nature/mountain_A_grass.gltf",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/decoration/nature/mountain_A_grass.gltf",
+    "sha256": "f8e7e228a5c5ec2edb1f8abb899328f085c6a951ca006fabb75df117150a8cd5"
+  },
+  {
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/decoration/nature/mountain_A_grass.bin",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/decoration/nature/mountain_A_grass.bin",
+    "sha256": "80ccf91b226646b74d61b99a6c3ab02ada2096bad4f995f2c9f580733f698b74"
+  },
+  {
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/decoration/nature/hills_A.gltf",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/decoration/nature/hills_A.gltf",
+    "sha256": "866af95bdd72acf0d55916f55daf5db798254d57c8b187440c8ff9ad8fa29671"
+  },
+  {
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/decoration/nature/hills_A.bin",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/decoration/nature/hills_A.bin",
+    "sha256": "a1d3bb1874dee2c2bbd1331a5ad5605a6975ec3714d23fee83e440002e19e0c1"
+  },
+  {
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/building_home_A_blue.gltf",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/building_home_A_blue.gltf",
+    "sha256": "60b3568e086d586b491eed8168c46acb61bb9670fb2c296faa64929b18dfcbea"
+  },
+  {
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/building_home_A_blue.bin",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/building_home_A_blue.bin",
+    "sha256": "31c30bc9d4fb9ac6182e20331f2501ec153131ca01a57d8412a6b8e6219c23fd"
+  },
+  {
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/hexagons_medieval.png",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/hexagons_medieval.png",
+    "sha256": "5301a06866ba3be68dcc14cc429bd6d0f69004b72884283715d7e233f2e9782e"
+  },
+  {
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/building_home_B_blue.gltf",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/building_home_B_blue.gltf",
+    "sha256": "bf503f4edcd3a744a021ccdd5b9215f6c8934ef87fa44d95632cb653422797eb"
+  },
+  {
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/building_home_B_blue.bin",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/building_home_B_blue.bin",
+    "sha256": "a9736eef43b33d8963f1f54b709eb4395cd5069aa6317b09856687d4045059ca"
+  },
+  {
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/building_windmill_blue.gltf",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/building_windmill_blue.gltf",
+    "sha256": "a98412d4bcd016ce63f66b5d7193adf664867c3649829707b04586fb73e31f38"
+  },
+  {
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/building_windmill_blue.bin",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/building_windmill_blue.bin",
+    "sha256": "ced3ff9447703352a7d57e2beb5b5e6f0c661c4d6c623a5d4efc22740103f467"
+  },
+  {
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/building_castle_blue.gltf",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/building_castle_blue.gltf",
+    "sha256": "f23ede8641122d2226f02a5fdb4957dfedec99accf27240f07ef7fb312696759"
+  },
+  {
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/building_castle_blue.bin",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-medieval-hexagon/3D/strategy-hex/Assets/gltf/buildings/blue/building_castle_blue.bin",
+    "sha256": "519004b02fe38eeadecf1f12722e47e40c342fa4bb01ade370734c63936d66a5"
+  },
+  {
+    "path": "assets/environment/kaykit-dungeon/3D/dungeon/Assets/gltf/column.gltf",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-dungeon/3D/dungeon/Assets/gltf/column.gltf",
+    "sha256": "2208960efa3f835a4dbd87e7ed942a81f57f7eb793388d5db65590c5936a8403"
+  },
+  {
+    "path": "assets/environment/kaykit-dungeon/3D/dungeon/Assets/gltf/column.bin",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-dungeon/3D/dungeon/Assets/gltf/column.bin",
+    "sha256": "e82740f9fda6b695caf0c956c7d74ae31db307eaa344cdd75fe548fd0482387e"
+  },
+  {
+    "path": "assets/environment/kaykit-dungeon/3D/dungeon/Assets/gltf/dungeon_texture.png",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-dungeon/3D/dungeon/Assets/gltf/dungeon_texture.png",
+    "sha256": "ceb331d6ed53273da5e26808560bca8496f8f6ebc12d83b570c0e317560f1d03"
+  },
+  {
+    "path": "assets/environment/kaykit-dungeon/3D/dungeon/Assets/gltf/wall_arched.gltf",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-dungeon/3D/dungeon/Assets/gltf/wall_arched.gltf",
+    "sha256": "81ff13faf26cab5dafa68263a016e86d3eb77d234aba8440c252761e84ccf9ca"
+  },
+  {
+    "path": "assets/environment/kaykit-dungeon/3D/dungeon/Assets/gltf/wall_arched.bin",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-dungeon/3D/dungeon/Assets/gltf/wall_arched.bin",
+    "sha256": "569999cee158aa75b05b57ef445ff882f931fc5f1a75580d7de6a5b33d79e7af"
+  },
+  {
+    "path": "assets/environment/kaykit-dungeon/3D/dungeon/Assets/gltf/banner_blue.gltf",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-dungeon/3D/dungeon/Assets/gltf/banner_blue.gltf",
+    "sha256": "98e87ce65c5a99f4135c6e94a8da2ee214d80a29744a4ec631b723d9c1a6c82e"
+  },
+  {
+    "path": "assets/environment/kaykit-dungeon/3D/dungeon/Assets/gltf/banner_blue.bin",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-dungeon/3D/dungeon/Assets/gltf/banner_blue.bin",
+    "sha256": "f81e12872e3672de01e30f867edf8693033582eb0fda91cecaef23ffcb1d5cc1"
+  },
+  {
+    "path": "assets/environment/kaykit-dungeon/3D/dungeon/Assets/gltf/torch_lit.gltf",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-dungeon/3D/dungeon/Assets/gltf/torch_lit.gltf",
+    "sha256": "2962691576e45f5b80debe2ce35f99d9f929f9d013ad9f7bc8e96341beef48e5"
+  },
+  {
+    "path": "assets/environment/kaykit-dungeon/3D/dungeon/Assets/gltf/torch_lit.bin",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-dungeon/3D/dungeon/Assets/gltf/torch_lit.bin",
+    "sha256": "8b45647a4ff1e70da274ce997b44c0f875cc8946f589e3ac484b13039bfac9b9"
+  },
+  {
+    "path": "assets/environment/kaykit-dungeon/3D/dungeon/Assets/gltf/floor_wood_large.gltf",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-dungeon/3D/dungeon/Assets/gltf/floor_wood_large.gltf",
+    "sha256": "b1d30e7e93bf10df9d4004bf58ef6eb258ef9512588f133289df023593014ec5"
+  },
+  {
+    "path": "assets/environment/kaykit-dungeon/3D/dungeon/Assets/gltf/floor_wood_large.bin",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-dungeon/3D/dungeon/Assets/gltf/floor_wood_large.bin",
+    "sha256": "f5f41554a55faa3413aa95faca22b53f83bb9739980ae2117af31aba531336c1"
+  },
+  {
+    "path": "assets/environment/kaykit-dungeon/3D/dungeon/Assets/gltf/floor_tile_large.gltf",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-dungeon/3D/dungeon/Assets/gltf/floor_tile_large.gltf",
+    "sha256": "c9c8807b44e18ecf1cb058b45f237008a23503e95e2d2282498730c87a734af1"
+  },
+  {
+    "path": "assets/environment/kaykit-dungeon/3D/dungeon/Assets/gltf/floor_tile_large.bin",
+    "source": "https://media.githubusercontent.com/media/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-dungeon/3D/dungeon/Assets/gltf/floor_tile_large.bin",
+    "sha256": "d4649c85286ff59fbf4b3fc8e5b228dc63ee2bb6914dbe716ca88acc9937ab23"
+  },
+  {
+    "path": "assets/environment/kaykit-forest-nature/3D/nature/License.txt",
+    "source": "https://raw.githubusercontent.com/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-forest-nature/3D/nature/License.txt",
+    "sha256": "ae2cff1491f4ae5d847a641e14c2e335777845d11b07c25b6f8a10bd4bf14e69"
+  },
+  {
+    "path": "assets/environment/kaykit-medieval-hexagon/3D/strategy-hex/License.txt",
+    "source": "https://raw.githubusercontent.com/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-medieval-hexagon/3D/strategy-hex/License.txt",
+    "sha256": "ae2cff1491f4ae5d847a641e14c2e335777845d11b07c25b6f8a10bd4bf14e69"
+  },
+  {
+    "path": "assets/environment/kaykit-dungeon/3D/dungeon/License.txt",
+    "source": "https://raw.githubusercontent.com/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-dungeon/3D/dungeon/License.txt",
+    "sha256": "ae2cff1491f4ae5d847a641e14c2e335777845d11b07c25b6f8a10bd4bf14e69"
   }
 ]

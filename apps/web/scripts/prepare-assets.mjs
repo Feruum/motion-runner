@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile, cp, access } from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { prepareEnvironment } from './environment-assets.mjs';
 
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const root = path.join(webRoot, 'public');
@@ -56,5 +57,7 @@ for (const model of models) {
   }
 }
 await download('https://raw.githubusercontent.com/series-ai/jam-ready-assets/f8206b38e4355a8b2a490e3032000d2a84883a0f/kaykit-platformer/3D/platformer/License.txt', 'assets/platformer/LICENSE.txt');
+const environmentCatalog = await prepareEnvironment(download);
+await writeFile(path.join(root, 'assets/environment/catalog.json'), JSON.stringify(environmentCatalog, null, 2) + '\n');
 await writeFile(path.join(root, 'assets/manifest.json'), JSON.stringify(records, null, 2) + '\n');
 console.log('Assets ready. Models, textures and MediaPipe run from this origin.');

@@ -16,7 +16,7 @@ function harness() {
     lastSuccessCount: 0, lastHitCount: 0, elapsedMs: 0, previousStage: 'WELCOME',
     previewTimeMs: 0, previewJumpStartedMs: -Infinity, previewPoseTime: -1,
     particleBatch: { update: vi.fn() }, playAction, burst,
-    updateTrack: vi.fn(), render: vi.fn(),
+    updateTrack: vi.fn(), render: vi.fn(), environment: { update: vi.fn() }, canvas: { dataset: {} },
     lowFallback: new THREE.Mesh(new THREE.BoxGeometry(2.5, .52, .75)),
     tallFallback: new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.2, .7)),
   });

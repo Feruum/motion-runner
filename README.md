@@ -1,8 +1,110 @@
 # Motion Runner
 
-Motion Runner is a standing-play arcade game controlled by a laptop webcam. Lean to change lanes, raise both hands to jump, clear obstacle waves and chase a personal best. The repository is a Bun workspace monorepo: `apps/web` contains the Vite game, `apps/api` contains the Hono API, and `packages/game` shares the original gesture, session and game rules.
+Motion Runner is a browser arcade controlled by an ordinary webcam. It turns body movement into game input: lean to steer, raise your hands to jump, copy a coach, reach for targets, dance through a routine, or race with friends. No gamepad or special sensor is required.
 
-**The controls are yours:** MediaPipe supplies 33 body landmarks. Motion Runner's own gesture engine calibrates a neutral stance, normalizes for shoulder width, smooths the pose, detects movement intent, confirms gestures and diagnoses incomplete tutorial attempts.
+**[Play the browser demo](https://feruum.github.io/motion-runner/)** · **[Browse the source](https://github.com/Feruum/motion-runner)** · [Third-party notices](./THIRD_PARTY_NOTICES.md)
+
+The main scenario is a complete 60-second run: the player enables the camera, calibrates a neutral stance, learns the gestures, steers around obstacles, receives movement feedback, and reaches a results screen with score and replay. Other modes reuse the same camera pipeline with their own rules and goals.
+
+The project is a Bun workspace. The Vite/TypeScript client runs pose recognition in the browser, the custom game package interprets landmarks and scores actions, and an optional Bun/Hono API serves multiplayer rooms and leaderboard storage. Camera video and pose landmarks stay on the device.
+
+<p align="center">
+  <img src="./docs/screenshots/overview.png" alt="Motion Runner game picker and camera setup screen" width="100%">
+</p>
+
+## Game gallery
+
+The gallery shows captures of the game UI. The small camera preview contains generated test landmarks for repeatable browser checks; it is not a recording of a player.
+
+<p align="center"><strong>Classic Run — avoid an obstacle and follow the correction cue</strong><br>
+<img src="./docs/screenshots/classic-run.png" alt="Classic Run showing upcoming obstacles and the instruction to change lanes, jump, or dodge" width="100%"></p>
+
+<table>
+  <tbody>
+    <tr>
+      <td width="50%" align="center"><strong>Mirror Challenge</strong><br><img src="./docs/screenshots/mirror-challenge.png" alt="Mirror Challenge coach demonstrates a lean while the player copies the pose" width="100%"></td>
+      <td width="50%" align="center"><strong>Dance Party · Solo</strong><br><img src="./docs/screenshots/dance-party-solo.png" alt="Front-facing dancer demonstrates a hands-up pose with progress and score" width="100%"></td>
+    </tr>
+    <tr>
+      <td width="50%" align="center"><strong>Dance Party · Duo</strong><br><img src="./docs/screenshots/dance-party-duo.png" alt="Two-player dance round with one shared cue and separate player feedback" width="100%"></td>
+      <td width="50%" align="center"><strong>Six-Seven Challenge</strong><br><img src="./docs/screenshots/six-seven-challenge.png" alt="Six-Seven character demonstrates alternating hands and shows two completed repetitions" width="100%"></td>
+    </tr>
+    <tr>
+      <td width="50%" align="center"><strong>Rhythm Run</strong><br><img src="./docs/screenshots/rhythm-run.png" alt="A low star approaches in Rhythm Run with the matching lean instruction" width="100%"></td>
+      <td width="50%" align="center"><strong>Dodge Arena</strong><br><img src="./docs/screenshots/dodge-arena.png" alt="Dodge Arena warns the player to leave the blocked center lane" width="100%"></td>
+    </tr>
+    <tr>
+      <td width="50%" align="center"><strong>Party Race</strong><br><img src="./docs/screenshots/party-race.png" alt="Party Race results show player placement and finish times" width="100%"></td>
+      <td width="50%" align="center"><strong>Mobile layout</strong><br><img src="./docs/screenshots/dance-party-mobile.png" alt="Dance Party Solo adapted to a narrow phone screen" width="100%"></td>
+    </tr>
+  </tbody>
+</table>
+
+## Game modes
+
+| Mode | Movement → action | Round and result |
+| --- | --- | --- |
+| **Classic Run** | Lean left/right to switch lanes; stand upright to return to center; raise both hands to jump. | Clear obstacle waves, build a score, and replay from the results screen. |
+| **Dodge Arena** | Lean into a lane that is not blocked after the warning appears. | Clear 24 telegraphed waves, keep a combo, and review collisions and score. |
+| **Rhythm Run** | Lean into the lane of a low star; return upright and jump for a high star. | Collect stars to the beat, build a combo, and see collected and missed totals. |
+| **Beat Blaster** | Reach toward each highlighted target with the indicated hand on the beat. | Timing grades, hits, misses and combo are summarized at the end. |
+| **Mirror Challenge** | Copy the coach's lean, arm or combined pose, then hold it. | Follow a 60-second sequence with a visible hold bar, spoken cues when available, score and replay. |
+| **Dance Party · Solo** | Mirror the front-facing dancer through left, right and hands-up poses. | Complete an eight-cue, 60-second routine; each correct pose is held for half a second. |
+| **Dance Party · Duo** | Two players copy one shared dance cue at the same time. | Each player gets a separate score and correction; synchronized holds earn a team bonus. |
+| **Six-Seven Challenge** | Raise one hand, then the other. Two alternating movements — 6 → 7 — count as one repetition. | The counter rejects a held pose or a whole-body lean; the result reports the repetition count. |
+| **Party Race** | Lean to steer and raise both hands to jump. | Race a field of bots offline or join a private room; results show place and finish time. |
+
+## Gesture recognition and the error mode
+
+The camera stream is processed in the browser. MediaPipe Pose Landmarker supplies 33 body landmarks; it does not decide what counts as a game action. Our TypeScript gesture engine calibrates the player's neutral pose, normalizes movement against shoulder width, smooths landmark noise, checks confidence and timing, and passes confirmed input to the selected mode's scoring rules.
+
+The feedback loop is explicit: **camera frame → landmarks → gesture intent → mode action → score and visual response**. A skeleton overlay shows what the tracker sees. A move is counted only when the required landmarks and movement criteria are present; incomplete or uncertain attempts receive corrective guidance instead of silently failing.
+
+Examples of actionable corrections:
+
+- “Stand upright and lower both hands for two seconds” when neutral calibration is blocked.
+- “Raise your right hand above your head” when the jump gesture is incomplete.
+- “Extend your left arm toward the target” or “Reach a little farther with your left hand” when a Beat Blaster reach misses its target.
+- “Keep both shoulders and wrists inside the camera frame” when a pose needs landmarks that are out of view.
+- Six-Seven explains the waist/chest hand position and asks the player to lift one hand slightly higher than the other.
+
+If full-body tracking is lost during a solo round, its timer and game pause. The interface names the missing tracking condition, then resumes the same round after stable tracking returns. In Party Race, the affected player's racer stops while the room keeps going. Camera video is never sent to the game server.
+
+## Technology stack
+
+| Layer | Technology | What it does |
+| --- | --- | --- |
+| Language and workspace | TypeScript, Bun workspaces | Shared types and game rules across the web client, API and game package. |
+| Web app | Vite, TypeScript, HTML and CSS | Development server, production bundle, responsive interface and camera flow. |
+| Pose recognition | MediaPipe Tasks Vision Pose Landmarker, WebAssembly | Extracts 33 body landmarks locally in the browser. |
+| Gesture and game logic | Original TypeScript in `packages/game` | Calibration, smoothing, gesture confirmation, correction hints, timing, collisions, scoring, pause and replay. |
+| 3D graphics | Three.js, postprocessing, three.quarks | Renders characters, tracks, game objects, lighting and particles. |
+| 3D assets | KayKit GLTF packs served locally | Characters and environments; asset sources and license notices are recorded in the repository. |
+| API and multiplayer | Bun, Hono, WebSockets | Optional leaderboard endpoints and private Party Race rooms. Online rooms exchange game-control state, not camera video. |
+| Storage | SQLite by default; optional Supabase | Local leaderboard in development or a shared leaderboard when a hosted API is configured. |
+| Verification | Vitest, Bun test and Playwright | Unit/API checks and browser scenarios using generated camera landmarks. |
+
+The main processing path is:
+
+```text
+Webcam → MediaPipe worker → 33 landmarks
+       → calibration and pose filters
+       → custom gesture and mode rules
+       → session/scoring state
+       → Three.js scene and corrective UI feedback
+```
+
+The static demo can be opened directly in a modern browser over HTTPS. The bot race works without a backend. Shared leaderboard data and online Party Race rooms need a reachable Hono API; setup details are documented below.
+
+## Repository map
+
+- `apps/web` — Vite browser app, camera lifecycle, MediaPipe worker, game presentation and Playwright tests.
+- `apps/api` — Hono API, leaderboard stores and Party Race WebSocket server.
+- `packages/game` — shared gesture recognizers, mode runtimes, session flow and scoring rules.
+- `docs/screenshots` — README gallery images.
+- `supabase/migrations` — optional shared leaderboard schema.
+
+See [Play locally](#play-locally) for the developer setup and [Checks](#checks) for verification commands.
 
 ## Play locally
 

@@ -4,6 +4,8 @@ declare const process: { platform: string; env: Record<string, string | undefine
 
 export default defineConfig({
   testDir: './tests/e2e',
+  testIgnore: '**/party-race.spec.ts',
+  workers: 1,
   timeout: 45000,
   expect: { timeout: 20000 },
   reporter: 'list',

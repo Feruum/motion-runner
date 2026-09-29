@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { GestureEngine } from '@motion-runner/game';
 import { pose } from './fixtures';
-import type { GestureId } from '@motion-runner/game';
+import type { TutorialGesture } from '@motion-runner/game';
 
 function setup() { const engine = new GestureEngine(); for (let t=0;t<=2200;t+=50) engine.update(pose(t)); return engine; }
-function hold(engine: GestureEngine, start: number, lean=0, arms: Parameters<typeof pose>[2]='down', expected?: GestureId, duration=800) {
+function hold(engine: GestureEngine, start: number, lean=0, arms: Parameters<typeof pose>[2]='down', expected?: TutorialGesture, duration=800) {
   let result = engine.update(pose(start, lean, arms), expected);
   const results = [result];
   for (let t=start+50;t<=start+duration;t+=50) { result=engine.update(pose(t,lean,arms),expected); results.push(result); }
@@ -50,6 +50,12 @@ describe('Gesture Engine', () => {
     expect(result.correction?.text).toBe('Raise your right hand above your head');
     expect(result.correction?.highlightLandmarks).toContain(16);
   });
+  it('gives hand-specific corrections during the Six-Seven tutorial', () => {
+    const e=setup();
+    expect(hold(e,2250,0,'right','LEFT_HAND_UP',800).result.correction?.text).toBe('Raise your left hand above your head.');
+    const both=setup();
+    expect(hold(both,2250,0,'up','LEFT_HAND_UP',800).result.correction?.text).toBe('Keep your right hand down and raise your left hand.');
+  });
   it('allows lean and jump together and re-arms only with both hands down', () => {
     const e=setup(); const first=hold(e,2250,-.4,'up',undefined,1200);
     expect(first.result.lane).toBe(-1); expect(first.results.filter(r=>r.jumpTriggered)).toHaveLength(1);
@@ -65,5 +71,39 @@ describe('Gesture Engine', () => {
   it('does not repeat a jump after tracking loss until hands lower', () => {
     const e=setup(); hold(e,2250,0,'up'); e.update({...pose(3100),landmarks:[]});
     expect(hold(e,3200,0,'up').results.some(r=>r.jumpTriggered)).toBe(false);
+  });
+  it('keeps steering when a wrist leaves the top of the frame and explains the missing hand', () => {
+    const e=setup(); hold(e,2250,-.35);
+    const p=pose(3100,-.35,'up'); p.landmarks[15].y=-.01;
+    const r=e.update(p);
+    expect(r.trackingValid).toBe(true);
+    expect(r.lane).toBe(-1);
+    expect(r.handsUp).toBe(false);
+    expect(r.jumpTriggered).toBe(false);
+    expect(r.correction?.code).toBe('tracking-hands');
+    expect(r.correction?.text).toContain('inside the camera frame');
+  });
+  it('does not calibrate or infer a jump from low confidence wrists', () => {
+    const e=new GestureEngine(); let r;
+    for(let t=0;t<=3000;t+=50){const p=pose(t);p.landmarks[15].visibility=.1;r=e.update(p);}
+    expect(r!.trackingValid).toBe(true);
+    expect(r!.calibrated).toBe(false);
+    expect(r!.correction?.code).toBe('tracking-hands');
+  });
+  it('recovers finite hand coordinates without a phantom jump after wrist clipping', () => {
+    const e=setup(); const p=pose(2250,0,'up'); p.landmarks[15].x=NaN;
+    expect(e.update(p).trackingValid).toBe(true);
+    expect(hold(e,2300,0,'up').results.some(r=>r.jumpTriggered)).toBe(false);
+    hold(e,3200);
+    expect(hold(e,4100,0,'up').results.filter(r=>r.jumpTriggered)).toHaveLength(1);
+  });
+  it('preserves an established lane through a single missing body sample', () => {
+    const e=setup();hold(e,2250,-.35);
+    e.update({...pose(3100),landmarks:[]});
+    expect(e.update(pose(3150,-.35)).lane).toBe(-1);
+  });
+  it('explains which part of the body is missing', () => {
+    const e=setup();const p=pose(2250);p.landmarks[23].visibility=.1;
+    expect(e.update(p).correction?.text).toContain('hips');
   });
 });

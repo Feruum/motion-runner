@@ -30,6 +30,7 @@ export interface DanceDuoPlayerResult {
   playerNumber: 1 | 2;
   score: number;
   completedCueCount: number;
+  missedCueCount: number;
   success: boolean;
   cueResolved: boolean;
   cueScore: number | null;
@@ -49,6 +50,8 @@ export interface DanceDuoResult {
   players: readonly [DanceDuoPlayerResult, DanceDuoPlayerResult];
   playerOneScore: number;
   playerTwoScore: number;
+  /** Sum of each player's one-time missed cue resolutions. */
+  misses: number;
   /** Points earned only through a synchronized pair; never copied into either personal score. */
   teamScore: number;
   synchronizedCueCount: number;
@@ -195,6 +198,7 @@ export class DanceDuoRuntime {
       players: playerResults,
       playerOneScore: first.score,
       playerTwoScore: second.score,
+      misses: first.missedCueCount + second.missedCueCount,
       teamScore: this.teamScore,
       synchronizedCueCount: this.synchronizedCueCount,
       synchronization,
@@ -239,6 +243,7 @@ export class DanceDuoRuntime {
       playerNumber,
       score: solo.score,
       completedCueCount: solo.completedCueCount,
+      missedCueCount: solo.missedCueCount,
       success: solo.success,
       cueResolved: solo.cueResolved,
       cueScore: solo.cueScore,

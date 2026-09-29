@@ -5,6 +5,7 @@ import type { GameMode, GestureAnalysis, Stage, TutorialGesture } from './types'
 export const standardTutorialSteps: readonly TutorialGesture[]=['LEAN_LEFT','LEAN_RIGHT','HANDS_UP_JUMP'];
 export const sixSevenTutorialSteps: readonly TutorialGesture[]=['LEFT_HAND_UP','RIGHT_HAND_UP'];
 export const dodgeTutorialSteps: readonly TutorialGesture[]=['LEAN_LEFT','LEAN_RIGHT'];
+export const beatBlasterTutorialSteps: readonly TutorialGesture[]=['BLAST_LEFT','BLAST_RIGHT'];
 export class SessionController {
   stage:Stage='WELCOME';
   readonly game:GameEngine;
@@ -22,7 +23,7 @@ export class SessionController {
   private tutorialMatchSince=-1;
   bestScore=0;
   constructor(durationMs:number=C.durationMs, mode:GameMode='classic-run'){this.game=new GameEngine(durationMs);this.tutorialMode=mode;}
-  get tutorialSteps(){return this.tutorialMode==='six-seven'?sixSevenTutorialSteps:this.tutorialMode==='dodge-arena'?dodgeTutorialSteps:standardTutorialSteps;}
+  get tutorialSteps(){return this.tutorialMode==='six-seven'?sixSevenTutorialSteps:this.tutorialMode==='dodge-arena'?dodgeTutorialSteps:this.tutorialMode==='beat-blaster'?beatBlasterTutorialSteps:standardTutorialSteps;}
   get tutorialTarget():TutorialGesture{return this.tutorialSteps[this.tutorialIndex]??'HANDS_UP_JUMP';}
   get tutorialProgress(){return this.tutorialIndex;}
   setTutorialMode(mode:GameMode){this.tutorialMode=mode;this.tutorialIndex=0;this.awaitingNeutral=false;this.tutorialSuccess=false;this.tutorialMatchSince=-1;}
@@ -86,14 +87,16 @@ export class SessionController {
   private tickTutorial(now:number,pose:GestureAnalysis){
     if(!pose.trackingValid||!pose.calibrated||now-pose.timestampMs>C.staleMs){this.tutorialMatchSince=-1;return;}
     if(this.awaitingNeutral){
-      if(pose.lane===0&&pose.handsDown){this.awaitingNeutral=false;this.tutorialSuccess=false;}
+      if(pose.lane===0&&pose.handsDown&&(this.tutorialMode!=='beat-blaster'||!this.hasBlasterReach(pose))){this.awaitingNeutral=false;this.tutorialSuccess=false;}
       else this.tutorialSuccess=false;
       return;
     }
     const match=this.tutorialTarget==='LEAN_LEFT'?pose.lane===-1
       :this.tutorialTarget==='LEAN_RIGHT'?pose.lane===1
         :this.tutorialTarget==='HANDS_UP_JUMP'?pose.handsUp
-          :this.matchesSingleRaisedHand(pose,this.tutorialTarget==='LEFT_HAND_UP'?'left':'right');
+          :this.tutorialTarget==='LEFT_HAND_UP'?this.matchesSingleRaisedHand(pose,'left')
+            :this.tutorialTarget==='RIGHT_HAND_UP'?this.matchesSingleRaisedHand(pose,'right')
+              :this.matchesBlasterReach(pose,this.tutorialTarget==='BLAST_LEFT'?'left':'right');
     if(!match){this.tutorialMatchSince=-1;return;}
     if(this.tutorialMatchSince<0)this.tutorialMatchSince=now;
     if(now-this.tutorialMatchSince>=C.tutorialConfirmMs){
@@ -110,6 +113,26 @@ export class SessionController {
     const left=l[15].visibility>=C.confidence&&l[15].y<eyeY-C.headMargin*torso;
     const right=l[16].visibility>=C.confidence&&l[16].y<eyeY-C.headMargin*torso;
     return hand==='left'?left&&!right:right&&!left;
+  }
+  private matchesBlasterReach(pose:GestureAnalysis,hand:'left'|'right'){
+    const reach=this.blasterReach(pose);
+    return !!reach&&reach[hand];
+  }
+  private hasBlasterReach(pose:GestureAnalysis){
+    const reach=this.blasterReach(pose);
+    return !!reach&&(reach.left||reach.right);
+  }
+  private blasterReach(pose:GestureAnalysis):{left:boolean;right:boolean}|null{
+    const l=pose.landmarks;
+    if(l.length<25)return null;
+    const required=[l[11],l[12],l[15],l[16]];
+    if(required.some(point=>!point||!Number.isFinite(point.x)||!Number.isFinite(point.visibility)||point.visibility<C.confidence||(point.presence??1)<C.confidence))return null;
+    const shoulderWidth=Math.abs(l[11].x-l[12].x);
+    if(shoulderWidth<.02)return null;
+    return {
+      left:l[15].x>l[11].x+shoulderWidth*.42,
+      right:l[16].x<l[12].x-shoulderWidth*.42,
+    };
   }
   private beginCountdown(now:number,resetGame=true){
     this.stage='COUNTDOWN';this.countdownEndsAt=now+(resetGame?C.countdownMs:C.recoveryCountdownMs);this.recoverySince=-1;

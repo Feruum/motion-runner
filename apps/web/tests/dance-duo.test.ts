@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PoseSample, Landmark } from '../../../packages/game/src/core/types';
-import { DANCE_CUES, type DanceCue, type DanceFeature } from '../../../packages/game/src/core/dance';
+import { DANCE_CUE_INTERVAL_MS, DANCE_CUES, type DanceCue, type DanceFeature } from '../../../packages/game/src/core/dance';
 import {
   DANCE_DUO_SYNC_BONUS,
   DANCE_DUO_SYNC_WINDOW_MS,
@@ -169,6 +169,53 @@ describe('Dance Duo runtime', () => {
     expect(result).toMatchObject({ elapsedMs: 750, playerOneScore: 70, playerTwoScore: 70, teamScore: DANCE_DUO_SYNC_BONUS });
     expect(result.players[0].cueResolved).toBe(true);
     expect(result.players[1].cueResolved).toBe(true);
+  });
+
+  it('freezes both active cue clocks and clears both holds when a required landmark is unreliable', () => {
+    const runtime = new DanceDuoRuntime();
+    const target = poseFor(DANCE_CUES[0]);
+    runtime.update(sample(0, [target, target]));
+    runtime.update(sample(250, [target, target]));
+
+    const lowConfidence = target.map(point => ({ ...point }));
+    lowConfidence[27].visibility = 0.2;
+    const lost = runtime.update(sample(300, [target, lowConfidence]));
+    expect(lost).toMatchObject({
+      elapsedMs: 250,
+      paused: true,
+      pauseReason: 'player-two-lost',
+      misses: 0,
+      players: [
+        { missedCueCount: 0, trackingRecovery: false },
+        { missedCueCount: 0, trackingRecovery: true },
+      ],
+    });
+
+    runtime.update(sample(5_000, [target, lowConfidence]));
+    expect(runtime.update(sample(20_000, [target, target]))).toMatchObject({ elapsedMs: 250, misses: 0 });
+    let resumed = runtime.update(sample(20_050, [target, target]));
+    for (let timestampMs = 20_100; timestampMs <= 20_500; timestampMs += 50) {
+      resumed = runtime.update(sample(timestampMs, [target, target]));
+    }
+    expect(resumed).toMatchObject({ elapsedMs: 750, misses: 0, playerOneScore: 70, playerTwoScore: 70 });
+  });
+
+  it('counts each player cue missed once, including when only one player misses', () => {
+    const runtime = new DanceDuoRuntime();
+    const target = poseFor(DANCE_CUES[0]);
+    const wrong = poseFor(DANCE_CUES[1]);
+    let result = feed(runtime, target, wrong, 0, DANCE_CUE_INTERVAL_MS);
+
+    expect(result).toMatchObject({
+      elapsedMs: DANCE_CUE_INTERVAL_MS,
+      misses: 1,
+      players: [
+        { completedCueCount: 1, missedCueCount: 0 },
+        { completedCueCount: 0, missedCueCount: 1 },
+      ],
+    });
+    result = runtime.update(sample(DANCE_CUE_INTERVAL_MS + 50, [target, wrong]));
+    expect(result.misses).toBe(1);
   });
 
   it('treats fewer than two player arrays as a joint tracking pause', () => {

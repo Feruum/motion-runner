@@ -12,5 +12,5 @@ export function pose(timestampMs: number, lean = 0, arms: 'down' | 'up' | 'left'
   return { timestampMs, landmarks, frameWidth: 640, frameHeight: 480 };
 }
 export function analysis(timestampMs: number, overrides: Partial<GestureAnalysis> = {}): GestureAnalysis {
-  return { timestampMs, lane: 0, lean: 0, jumpTriggered: false, handsUp: false, handsDown: true, trackingValid: true, calibrated: true, calibrationProgress: 1, correction: null, landmarks: pose(timestampMs).landmarks, ...overrides };
+  return { timestampMs, lane: 0, lean: 0, jumpTriggered: false, handsUp: false, handsDown: true, handsTracked: true, trackingValid: true, calibrated: true, calibrationProgress: 1, correction: null, landmarks: pose(timestampMs).landmarks, ...overrides };
 }

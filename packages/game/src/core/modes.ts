@@ -1,7 +1,12 @@
 import { GameEngine, makeWaves } from './game';
 import { DodgeArenaRuntime, makeDodgeWaves as makeAuthoredDodgeWaves } from './dodge';
 import { SixSevenRecognizer } from './six-seven';
-import type { GameMode, GestureAnalysis, GameEvent, Wave } from './types';
+import { BeatBlasterRuntime, BEAT_BLASTER_CHART } from './blaster';
+import type { BeatBlasterHighlight, BeatBlasterInput, BeatBlasterResult } from './blaster';
+import { DanceSoloRuntime, DANCE_CUES } from './dance';
+import { DanceDuoRuntime } from './dance-duo';
+import { MirrorChallengeRuntime } from './mirror';
+import type { GameMode, GestureAnalysis, GameEvent, Landmark, PoseSample, Wave } from './types';
 
 export interface ModeDefinition {
   id: GameMode;
@@ -14,6 +19,7 @@ export interface ModeDefinition {
 }
 
 export const GAME_MODES: readonly ModeDefinition[] = [
+  { id: 'party-race', title: 'Party Race', subtitle: 'Race friends and bots', instruction: 'Lean to steer freely. Raise both hands to jump. Reach the finish together.', icon: '⚑', music: false },
   { id: 'classic-run', title: 'Classic Run', subtitle: 'Run the skyway', instruction: 'Lean to change lanes. Raise both hands to jump.', icon: '↗', music: false },
   { id: 'rhythm-run', title: 'Rhythm Run', subtitle: 'Move on the beat', instruction: 'Follow each move cue and hit it as the beat lands.', icon: '♫', music: true },
   { id: 'mirror-challenge', title: 'Mirror Challenge', subtitle: 'Copy the coach', instruction: 'Match the coach’s pose and hold it when the pulse lands.', icon: '◉', music: true },
@@ -24,8 +30,8 @@ export const GAME_MODES: readonly ModeDefinition[] = [
   { id: 'dance-duo', title: 'Dance Party · Duo', subtitle: 'Two players, one routine', instruction: 'Stand side by side. Both players copy the same cue together.', icon: 'Ⅱ', music: true, twoPlayers: true },
 ];
 
-// Only modes with a complete session, scoring and result flow belong in the release picker.
-export const PLAYABLE_MODES = GAME_MODES.filter(mode => mode.id === 'classic-run' || mode.id === 'rhythm-run' || mode.id === 'six-seven');
+// Every mode has a complete camera setup, scoring and result/replay flow.
+export const PLAYABLE_MODES = GAME_MODES;
 
 export type MoveCue = 'LEAN_LEFT' | 'LEAN_RIGHT' | 'HANDS_UP_JUMP' | 'BLAST_LEFT' | 'BLAST_RIGHT';
 export interface ModeCue { atMs: number; move: MoveCue; resolved: boolean }
@@ -42,18 +48,28 @@ export interface ModeSnapshot {
   feedback: string;
   feedbackKind: 'good' | 'hint' | 'neutral';
   sixSevenCount: number;
+  blasterHighlight: BeatBlasterHighlight | null;
+  poseCueName: string | null;
+  poseCueIndex: number | null;
+  poseCueCount: number;
+  posePhase: string | null;
+  highlightedLandmarkIndexes: number[];
+  playerOneHighlights: number[];
+  playerTwoHighlights: number[];
+  playerOneFeedback: string;
+  playerTwoFeedback: string;
+  teamScore: number;
+  synchronizedCueCount: number;
+  trackingRecovery: boolean;
 }
 
-const chartMoves: Record<'rhythm-run' | 'mirror-challenge' | 'beat-blaster' | 'dance-party' | 'dance-duo', MoveCue[]> = {
+const chartMoves: Record<'rhythm-run' | 'beat-blaster', MoveCue[]> = {
   'rhythm-run': ['LEAN_LEFT', 'HANDS_UP_JUMP', 'LEAN_RIGHT', 'HANDS_UP_JUMP'],
-  'mirror-challenge': ['LEAN_LEFT', 'LEAN_RIGHT', 'HANDS_UP_JUMP', 'LEAN_LEFT', 'HANDS_UP_JUMP', 'LEAN_RIGHT'],
   'beat-blaster': ['BLAST_LEFT', 'BLAST_RIGHT', 'BLAST_LEFT', 'BLAST_RIGHT'],
-  'dance-party': ['LEAN_LEFT', 'LEAN_RIGHT', 'HANDS_UP_JUMP', 'LEAN_RIGHT', 'LEAN_LEFT', 'HANDS_UP_JUMP'],
-  'dance-duo': ['LEAN_LEFT', 'LEAN_RIGHT', 'HANDS_UP_JUMP', 'LEAN_RIGHT', 'LEAN_LEFT', 'HANDS_UP_JUMP'],
 };
 
 const intervalMs: Record<keyof typeof chartMoves, number> = {
-  'rhythm-run': 2000, 'mirror-challenge': 3000, 'beat-blaster': 1600, 'dance-party': 2200, 'dance-duo': 2200,
+  'rhythm-run': 2000, 'beat-blaster': 1600,
 };
 
 const RHYTHM_WINDOW_MS = 360;
@@ -61,6 +77,11 @@ const RHYTHM_FEEDBACK_MS = 800;
 
 export function buildModeChart(mode: GameMode, durationMs: number): ModeCue[] {
   if (!(mode in chartMoves)) return [];
+  if (mode === 'beat-blaster') {
+    return BEAT_BLASTER_CHART
+      .filter(cue => cue.atMs < durationMs)
+      .map(cue => ({ atMs: cue.atMs, move: cue.side === 'left' ? 'BLAST_LEFT' : 'BLAST_RIGHT', resolved: false }));
+  }
   const key = mode as keyof typeof chartMoves;
   const interval = intervalMs[key];
   const firstCueMs = mode === 'rhythm-run' ? 4_000 : 2_600;
@@ -69,6 +90,56 @@ export function buildModeChart(mode: GameMode, durationMs: number): ModeCue[] {
     chart.push({ atMs, move: chartMoves[key][chart.length % chartMoves[key].length], resolved: false });
   }
   return chart;
+}
+
+const invalidBlasterTorso = { centerX: Number.NaN, centerY: Number.NaN, length: 0 };
+
+/**
+ * Converts MediaPipe's unmirrored normalized landmarks into the coordinate
+ * system used by the camera preview and BeatBlasterRuntime. Anatomical sides
+ * remain unchanged; only x is mirrored. Invalid torso data is passed through as
+ * an invalid calibration so the runtime can clear entry history safely.
+ */
+export function makeBeatBlasterInput(sample: PoseSample | null | undefined): BeatBlasterInput {
+  const timestampMs = sample && Number.isFinite(sample.timestampMs) ? sample.timestampMs : Number.NaN;
+  const landmarks = sample?.landmarks;
+  if (!landmarks || landmarks.length <= 24) {
+    return { timestampMs, torso: invalidBlasterTorso, leftWrist: null, rightWrist: null };
+  }
+
+  const point = (index: number) => validBlasterPoint(landmarks[index]);
+  const leftWrist = point(15);
+  const rightWrist = point(16);
+  const leftShoulder = point(11);
+  const rightShoulder = point(12);
+  const leftHip = point(23);
+  const rightHip = point(24);
+
+  if (!leftShoulder || !rightShoulder || !leftHip || !rightHip) {
+    return { timestampMs, torso: invalidBlasterTorso, leftWrist, rightWrist };
+  }
+
+  const shoulderX = (leftShoulder.x + rightShoulder.x) / 2;
+  const shoulderY = (leftShoulder.y + rightShoulder.y) / 2;
+  const hipX = (leftHip.x + rightHip.x) / 2;
+  const hipY = (leftHip.y + rightHip.y) / 2;
+  const torso = {
+    centerX: 1 - (shoulderX + hipX) / 2,
+    centerY: (shoulderY + hipY) / 2,
+    length: Math.hypot((1 - shoulderX) - (1 - hipX), shoulderY - hipY),
+  };
+  return { timestampMs, torso, leftWrist, rightWrist };
+}
+
+function validBlasterPoint(landmark: Landmark | undefined) {
+  if (!landmark) return null;
+  const confidence = Math.min(landmark.visibility, landmark.presence ?? landmark.visibility);
+  if (!Number.isFinite(landmark.x) || !Number.isFinite(landmark.y)
+    || landmark.x < 0 || landmark.x > 1 || landmark.y < 0 || landmark.y > 1
+    || !Number.isFinite(confidence) || confidence < 0.6 || confidence > 1) {
+    return null;
+  }
+  return { x: 1 - landmark.x, y: landmark.y, confidence };
 }
 
 export function makeDodgeWaves(durationMs: number): Wave[] {
@@ -128,12 +199,39 @@ export class ModeEngine {
   private previous: GestureAnalysis | null = null;
   private readonly sixSeven = new SixSevenRecognizer();
   private readonly dodge: DodgeArenaRuntime | null;
+  private readonly blaster: BeatBlasterRuntime | null;
+  private readonly mirror: MirrorChallengeRuntime | null;
+  private readonly danceSolo: DanceSoloRuntime | null;
+  private readonly danceDuo: DanceDuoRuntime | null;
+  private lastBlasterResult: BeatBlasterResult | null = null;
+  private lastPoseElapsedMs = 0;
+  private readonly missedMirrorTasks = new Set<number>();
+  private readonly completedMirrorTasks = new Set<number>();
+  private poseFinished = false;
+  private poseCueName: string | null = null;
+  private poseCueIndex: number | null = null;
+  private poseCueCount = 0;
+  private posePhase: string | null = null;
+  private highlightedLandmarkIndexes: number[] = [];
+  private playerOneHighlights: number[] = [];
+  private playerTwoHighlights: number[] = [];
+  private playerOneFeedback = '';
+  private playerTwoFeedback = '';
+  private teamScore = 0;
+  private synchronizedCueCount = 0;
+  private trackingRecovery = false;
   private lastDodgeElapsedMs = 0;
   private lastFeedbackAt = -Infinity;
 
   constructor(readonly mode: GameMode, durationMs: number) {
     this.chart = buildModeChart(mode, durationMs);
     this.dodge = mode === 'dodge-arena' ? new DodgeArenaRuntime(durationMs) : null;
+    this.blaster = mode === 'beat-blaster'
+      ? new BeatBlasterRuntime(BEAT_BLASTER_CHART.filter(cue => cue.atMs < durationMs))
+      : null;
+    this.mirror = mode === 'mirror-challenge' ? new MirrorChallengeRuntime() : null;
+    this.danceSolo = mode === 'dance-party' ? new DanceSoloRuntime() : null;
+    this.danceDuo = mode === 'dance-duo' ? new DanceDuoRuntime() : null;
   }
 
   reset(): void {
@@ -144,13 +242,59 @@ export class ModeEngine {
     this.previous = null;
     this.sixSeven.reset();
     this.dodge?.reset();
+    this.blaster?.reset();
+    this.mirror?.reset();
+    this.danceSolo?.reset();
+    this.danceDuo?.reset();
+    this.lastBlasterResult = null;
+    this.lastPoseElapsedMs = 0;
+    this.missedMirrorTasks.clear();
+    this.completedMirrorTasks.clear();
+    this.poseFinished = false;
+    this.poseCueName = null;
+    this.poseCueIndex = null;
+    this.poseCueCount = 0;
+    this.posePhase = null;
+    this.highlightedLandmarkIndexes = [];
+    this.playerOneHighlights = [];
+    this.playerTwoHighlights = [];
+    this.playerOneFeedback = '';
+    this.playerTwoFeedback = '';
+    this.teamScore = 0;
+    this.synchronizedCueCount = 0;
+    this.trackingRecovery = false;
     this.lastDodgeElapsedMs = 0;
     this.lastFeedbackAt = -Infinity;
     this.feedback = '';
     this.feedbackKind = 'neutral';
   }
 
-  update(elapsedMs: number, primary: GestureAnalysis, secondary?: GestureAnalysis | null): GameEvent[] {
+  update(elapsedMs: number, primary: GestureAnalysis, secondary?: GestureAnalysis | null, blasterInput?: BeatBlasterInput, poseSample?: PoseSample): GameEvent[] {
+    if (this.mode === 'beat-blaster' && this.blaster) {
+      if (!blasterInput) return [];
+      // Use active session time so recovery pauses and the pre-run countdown do
+      // not age target windows while camera timestamps continue advancing.
+      const result = this.blaster.update({ ...blasterInput, timestampMs: elapsedMs });
+      this.lastBlasterResult = result;
+      this.score = result.score;
+      this.misses = result.misses;
+      this.combo = result.combo;
+      this.bestCombo = Math.max(this.bestCombo, this.combo);
+      const resolutions = result.resolutions;
+      const hits = resolutions.filter(resolution => resolution.points > 0);
+      this.cleared += hits.length;
+      for (const resolution of resolutions) {
+        const chartIndex = Number(resolution.cueId.replace(/^blaster-/, '')) - 1;
+        if (Number.isInteger(chartIndex) && chartIndex >= 0 && this.chart[chartIndex]) this.chart[chartIndex].resolved = true;
+      }
+      this.feedback = result.feedback;
+      this.feedbackKind = hits.length ? 'good' : result.feedback ? 'hint' : 'neutral';
+      this.lastFeedbackAt = elapsedMs;
+      return hits.length ? ['clear'] : [];
+    }
+    if (this.mode === 'mirror-challenge' && this.mirror) return this.updateMirror(elapsedMs, primary);
+    if (this.mode === 'dance-party' && this.danceSolo) return this.updateDanceSolo(elapsedMs, primary);
+    if (this.mode === 'dance-duo' && this.danceDuo) return this.updateDanceDuo(elapsedMs, poseSample);
     if (this.mode === 'six-seven') {
       const result = this.sixSeven.update(elapsedMs, primary.landmarks, primary.trackingValid && primary.handsTracked);
       this.sixSevenCount = result.count;
@@ -258,7 +402,143 @@ export class ModeEngine {
       || (!activeCue && elapsedMs - this.lastFeedbackAt < RHYTHM_FEEDBACK_MS);
     return { score: this.score, cleared: this.cleared, misses: this.misses, collisions: this.collisions, combo: this.combo, bestCombo: this.bestCombo,
       playerOneScore: this.playerOneScore, playerTwoScore: this.playerTwoScore, activeCue, feedback: showFeedback ? this.feedback : '',
-      feedbackKind: showFeedback ? this.feedbackKind : 'neutral', sixSevenCount: this.sixSevenCount };
+      feedbackKind: showFeedback ? this.feedbackKind : 'neutral', sixSevenCount: this.sixSevenCount,
+      blasterHighlight: this.lastBlasterResult?.highlight ?? null,
+      poseCueName: this.poseCueName, poseCueIndex: this.poseCueIndex, poseCueCount: this.poseCueCount, posePhase: this.posePhase,
+      highlightedLandmarkIndexes: [...this.highlightedLandmarkIndexes],
+      playerOneHighlights: [...this.playerOneHighlights], playerTwoHighlights: [...this.playerTwoHighlights],
+      playerOneFeedback: this.playerOneFeedback, playerTwoFeedback: this.playerTwoFeedback,
+      teamScore: this.teamScore, synchronizedCueCount: this.synchronizedCueCount, trackingRecovery: this.trackingRecovery };
+  }
+
+  private updateMirror(elapsedMs: number, primary: GestureAnalysis): GameEvent[] {
+    const timestampMs = this.poseTimestamp(elapsedMs);
+    const result = this.mirror!.update(timestampMs, primary.landmarks, primary.trackingValid);
+    this.score = result.score;
+    this.cleared = result.completedTaskCount;
+    this.poseCueName = result.taskName;
+    this.poseCueIndex = result.taskIndex;
+    this.poseCueCount = result.totalTasks;
+    this.posePhase = result.taskPhase;
+    this.highlightedLandmarkIndexes = [...result.highlightedLandmarkIndexes];
+    this.playerOneHighlights = [...result.highlightedLandmarkIndexes];
+    this.playerTwoHighlights = [];
+    this.playerOneFeedback = result.feedback;
+    this.playerTwoFeedback = '';
+    this.trackingRecovery = !primary.trackingValid || result.feedback.startsWith('Step back');
+
+    const events: GameEvent[] = [];
+    if (result.success) {
+      if (result.taskIndex !== null) this.completedMirrorTasks.add(result.taskIndex);
+      this.combo++;
+      this.bestCombo = Math.max(this.bestCombo, this.combo);
+      events.push('clear');
+    }
+    if (result.taskPhase === 'result' && result.taskIndex !== null
+      && !this.completedMirrorTasks.has(result.taskIndex)
+      && !this.missedMirrorTasks.has(result.taskIndex)) {
+      this.missedMirrorTasks.add(result.taskIndex);
+      this.misses++;
+      this.combo = 0;
+    }
+    this.feedback = result.feedback;
+    this.feedbackKind = result.success || result.feedback.startsWith('Task complete')
+      ? 'good'
+      : this.trackingRecovery || result.highlightedLandmarkIndexes.length > 0 || result.taskPhase === 'result'
+        ? 'hint'
+        : 'neutral';
+    if (result.challengeCompleted && !this.poseFinished) {
+      this.poseFinished = true;
+      events.push('finish');
+    }
+    return events;
+  }
+
+  private updateDanceSolo(elapsedMs: number, primary: GestureAnalysis): GameEvent[] {
+    const timestampMs = this.poseTimestamp(elapsedMs);
+    const result = this.danceSolo!.update(timestampMs, primary.landmarks, primary.trackingValid);
+    this.score = result.score;
+    this.cleared = result.completedCueCount;
+    this.misses = result.missedCueCount;
+    this.playerOneScore = result.score;
+    this.poseCueName = result.currentCueName;
+    this.poseCueIndex = result.currentCueIndex;
+    this.poseCueCount = DANCE_CUES.length;
+    this.posePhase = result.challengeCompleted ? 'complete' : result.trackingRecovery ? 'recovery' : result.cueResolved ? 'result' : 'attempt';
+    this.highlightedLandmarkIndexes = [...result.highlightedLandmarkIndexes];
+    this.playerOneHighlights = [...result.highlightedLandmarkIndexes];
+    this.playerTwoHighlights = [];
+    this.playerOneFeedback = result.feedback;
+    this.playerTwoFeedback = '';
+    this.trackingRecovery = result.trackingRecovery;
+    this.feedback = result.feedback;
+    this.feedbackKind = result.success ? 'good'
+      : result.trackingRecovery || (result.feedback !== '' && result.feedback !== 'Hold that pose'
+        && result.feedback !== 'Cue complete — get ready for the next move' && result.feedback !== 'Dance complete')
+        ? 'hint' : 'neutral';
+
+    const events: GameEvent[] = [];
+    if (result.success) {
+      this.combo++;
+      this.bestCombo = Math.max(this.bestCombo, this.combo);
+      events.push('clear');
+    }
+    if (result.challengeCompleted && !this.poseFinished) {
+      this.poseFinished = true;
+      events.push('finish');
+    }
+    return events;
+  }
+
+  private updateDanceDuo(elapsedMs: number, poseSample?: PoseSample): GameEvent[] {
+    const timestampMs = this.poseTimestamp(elapsedMs);
+    // Duo is intentionally sourced from worker-assigned player slots. A primary
+    // pose alone cannot silently count as two players.
+    const sample = { timestampMs, players: poseSample?.players ?? [] };
+    const result = this.danceDuo!.update(sample);
+    this.playerOneScore = result.playerOneScore;
+    this.playerTwoScore = result.playerTwoScore;
+    this.misses = result.misses;
+    this.teamScore = result.teamScore;
+    this.synchronizedCueCount = result.synchronizedCueCount;
+    this.score = result.playerOneScore + result.playerTwoScore + result.teamScore;
+    this.cleared = Math.min(result.players[0].completedCueCount, result.players[1].completedCueCount);
+    this.combo = result.synchronizedCueCount;
+    this.bestCombo = Math.max(this.bestCombo, this.combo);
+    this.poseCueName = result.currentCueName;
+    this.poseCueIndex = result.currentCueIndex;
+    this.poseCueCount = DANCE_CUES.length;
+    this.posePhase = result.challengeCompleted ? 'complete' : result.paused ? 'paused' : 'attempt';
+    this.playerOneHighlights = [...result.players[0].highlightedLandmarkIndexes];
+    this.playerTwoHighlights = [...result.players[1].highlightedLandmarkIndexes];
+    this.highlightedLandmarkIndexes = [...this.playerOneHighlights, ...this.playerTwoHighlights]
+      .filter((index, position, all) => all.indexOf(index) === position)
+      .sort((left, right) => left - right);
+    this.playerOneFeedback = result.players[0].feedback;
+    this.playerTwoFeedback = result.players[1].feedback;
+    this.trackingRecovery = result.paused && result.pauseReason !== 'ambiguous-players';
+    this.feedback = result.feedback;
+    this.feedbackKind = result.synchronization === 'synchronized' || result.players.some(player => player.success)
+      && !result.paused && result.diagnosis !== 'player-one-needs-correction' && result.diagnosis !== 'player-two-needs-correction'
+      ? 'good'
+      : result.paused || result.synchronization === 'out-of-sync'
+        || result.diagnosis === 'player-one-needs-correction' || result.diagnosis === 'player-two-needs-correction'
+        || result.diagnosis === 'both-need-correction'
+        ? 'hint' : 'neutral';
+
+    const events: GameEvent[] = [];
+    if (result.players.some(player => player.success)) events.push('clear');
+    if (result.challengeCompleted && !this.poseFinished) {
+      this.poseFinished = true;
+      events.push('finish');
+    }
+    return events;
+  }
+
+  private poseTimestamp(elapsedMs: number): number {
+    const candidate = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : this.lastPoseElapsedMs;
+    this.lastPoseElapsedMs = Math.max(this.lastPoseElapsedMs, candidate);
+    return this.lastPoseElapsedMs;
   }
 
   private registerHit(cue: ModeCue, elapsedMs: number): boolean {

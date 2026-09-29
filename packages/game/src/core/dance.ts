@@ -89,7 +89,7 @@ export interface DanceSoloOptions {
   holdMs?: number;
   /** Minimum visibility and optional presence required for every feature landmark. */
   confidenceThreshold?: number;
-  /** A pause or tracking gap clears an unconfirmed hold. */
+  /** A larger sample gap clears an unconfirmed hold and freezes active time; defaults to 300 ms. */
   maxSampleGapMs?: number;
   /** Overrides the authored default tolerance for all angle features. */
   angleToleranceDegrees?: number;
@@ -106,6 +106,8 @@ export interface DanceSoloResult {
   currentCueId: string | null;
   currentCueName: string;
   completedCueCount: number;
+  /** Number of authored cue attempts that expired without a successful hold. */
+  missedCueCount: number;
   score: number;
   /** True for the single update where this cue resolves. */
   success: boolean;
@@ -291,18 +293,21 @@ function clamp(value: number, min: number, max: number): number {
  * horizontal direction is resolved from shoulder indexes 11/12 so anatomical left/right survive
  * a mirrored preview. `paused` freezes the active 60-second clock; the interval spanning either
  * pause transition is excluded and any incomplete pose hold is cleared. Invalid visibility or
- * a missing required landmark requests tracking recovery and also clears the hold.
+ * a missing required landmark requests tracking recovery and also clears the hold. A timestamp
+ * gap larger than `maxSampleGapMs` (300 ms by default) also clears the hold and excludes that
+ * interval from active challenge and cue time.
  */
 export class DanceSoloRuntime {
   private readonly options: Required<Pick<DanceSoloOptions, 'holdMs' | 'confidenceThreshold' | 'maxSampleGapMs'>> & DanceSoloOptions;
   private elapsedMs = 0;
   private lastTimestampMs: number | null = null;
-  private lastSampleElapsedMs: number | null = null;
   private pendingSinceMs: number | null = null;
   private activeCueIndex: number | null = null;
   private wasPaused = false;
   private resolved: boolean[] = DANCE_CUES.map(() => false);
+  private missed: boolean[] = DANCE_CUES.map(() => false);
   private completedCueCount = 0;
+  private missedCueCount = 0;
   private score = 0;
 
   constructor(options: DanceSoloOptions = {}) {
@@ -310,19 +315,20 @@ export class DanceSoloRuntime {
       ...options,
       holdMs: options.holdMs ?? DANCE_HOLD_MS,
       confidenceThreshold: options.confidenceThreshold ?? C.confidence,
-      maxSampleGapMs: options.maxSampleGapMs ?? 250,
+      maxSampleGapMs: options.maxSampleGapMs ?? 300,
     };
   }
 
   reset(): void {
     this.elapsedMs = 0;
     this.lastTimestampMs = null;
-    this.lastSampleElapsedMs = null;
     this.pendingSinceMs = null;
     this.activeCueIndex = null;
     this.wasPaused = false;
     this.resolved = DANCE_CUES.map(() => false);
+    this.missed = DANCE_CUES.map(() => false);
     this.completedCueCount = 0;
+    this.missedCueCount = 0;
     this.score = 0;
   }
 
@@ -334,58 +340,65 @@ export class DanceSoloRuntime {
 
     const priorTimestamp = this.lastTimestampMs;
     const interval = priorTimestamp === null ? 0 : Math.max(0, timestampMs - priorTimestamp);
-    const crossedPauseBoundary = paused || this.wasPaused;
-    if (!crossedPauseBoundary) this.elapsedMs += interval;
+    const frameGap = priorTimestamp !== null && interval > this.options.maxSampleGapMs;
+    const cueForTracking = this.activeCueIndex === null
+      ? DANCE_CUES[clamp(Math.floor(this.elapsedMs / DANCE_CUE_INTERVAL_MS), 0, DANCE_CUES.length - 1)]
+      : DANCE_CUES[this.activeCueIndex];
+    const requiredIndexes = requiredLandmarkIndexes(cueForTracking);
+    const unavailable = !trackingValid
+      ? requiredIndexes
+      : confidenceProblems(landmarks, requiredIndexes, this.options.confidenceThreshold);
+    const scale = unavailable.length === 0 ? bodyScale(landmarks) : null;
+    const trackingLost = unavailable.length > 0 || scale === null;
+    const crossedPauseBoundary = paused || this.wasPaused || trackingLost;
+    if (!crossedPauseBoundary && !frameGap) this.elapsedMs += interval;
     this.lastTimestampMs = timestampMs;
+    if (frameGap || trackingLost) this.pendingSinceMs = null;
 
     if (paused) {
       this.wasPaused = true;
       this.pendingSinceMs = null;
-      this.lastSampleElapsedMs = null;
-      return this.result(false, null, null, 'Paused', [], false, true);
+      return this.result(false, this.activeCueIndex, null, 'Paused', [], false, true);
+    }
+
+    if (trackingLost) {
+      this.wasPaused = true;
+      const cueIndex = this.elapsedMs >= DANCE_DURATION_MS
+        ? null
+        : clamp(Math.floor(this.elapsedMs / DANCE_CUE_INTERVAL_MS), 0, DANCE_CUES.length - 1);
+      const highlighted = unavailable.length > 0 ? unavailable : [...BASE_LANDMARKS];
+      return this.result(
+        false, cueIndex, null,
+        'Step back and keep your full body visible in the frame', highlighted, true, false,
+      );
     }
 
     if (this.wasPaused) {
       this.wasPaused = false;
       this.pendingSinceMs = null;
-      this.lastSampleElapsedMs = null;
     }
 
     if (this.elapsedMs >= DANCE_DURATION_MS) {
       this.pendingSinceMs = null;
+      if (this.activeCueIndex !== null) this.markMissed(this.activeCueIndex);
       return this.result(false, null, null, 'Dance complete', [], false, false);
     }
 
     const cueIndex = clamp(Math.floor(this.elapsedMs / DANCE_CUE_INTERVAL_MS), 0, DANCE_CUES.length - 1);
     const currentCue = DANCE_CUES[cueIndex];
     if (this.activeCueIndex !== cueIndex) {
+      if (this.activeCueIndex !== null) this.markMissed(this.activeCueIndex);
       this.activeCueIndex = cueIndex;
       this.pendingSinceMs = null;
-      this.lastSampleElapsedMs = null;
     }
-    if (this.lastSampleElapsedMs !== null && this.elapsedMs - this.lastSampleElapsedMs > this.options.maxSampleGapMs) {
-      this.pendingSinceMs = null;
-    }
-    this.lastSampleElapsedMs = this.elapsedMs;
 
     if (this.resolved[cueIndex]) {
       this.pendingSinceMs = null;
       return this.result(false, cueIndex, null, 'Cue complete — get ready for the next move', [], false, false);
     }
 
-    const requiredIndexes = requiredLandmarkIndexes(currentCue);
-    const unavailable = !trackingValid
-      ? requiredIndexes
-      : confidenceProblems(landmarks, requiredIndexes, this.options.confidenceThreshold);
-    if (unavailable.length > 0) {
-      this.pendingSinceMs = null;
-      const highlighted = unavailable.length > 0 ? unavailable : requiredIndexes;
-      return this.result(false, cueIndex, null, 'Step back and keep your full body visible in the frame', highlighted, true, false);
-    }
-
-    const scale = bodyScale(landmarks);
+    // The cue landmarks and body scale were validated before advancing active time.
     if (!scale) {
-      this.pendingSinceMs = null;
       return this.result(false, cueIndex, null, 'Step back and keep your shoulders and hips visible in the frame', [...BASE_LANDMARKS], true, false);
     }
 
@@ -435,6 +448,12 @@ export class DanceSoloRuntime {
     return this.options.positionToleranceTorso ?? item.tolerance;
   }
 
+  private markMissed(cueIndex: number): void {
+    if (this.resolved[cueIndex] || this.missed[cueIndex]) return;
+    this.missed[cueIndex] = true;
+    this.missedCueCount += 1;
+  }
+
   private weight(group: DanceFeatureGroup): number {
     const configured = this.options.groupWeights?.[group];
     return configured !== undefined && Number.isFinite(configured)
@@ -472,6 +491,7 @@ export class DanceSoloRuntime {
       currentCueId: cue?.id ?? null,
       currentCueName: cue?.name ?? (this.elapsedMs >= DANCE_DURATION_MS ? 'Complete' : 'Dance Solo'),
       completedCueCount: this.completedCueCount,
+      missedCueCount: this.missedCueCount,
       score: this.score,
       success,
       cueResolved: cueIndex === null ? false : this.resolved[cueIndex],

@@ -90,6 +90,14 @@ function samples(
   return result;
 }
 
+function feedUntil(runtime: DanceSoloRuntime, startMs: number, endMs: number, landmarks: Landmark[]) {
+  let result = runtime.update(startMs, landmarks, true);
+  for (let timestampMs = startMs + 50; timestampMs <= endMs; timestampMs += 50) {
+    result = runtime.update(timestampMs, landmarks, true);
+  }
+  return result;
+}
+
 describe('Dance Solo runtime', () => {
   it('authors eight distinct full-body cues across a 60-second round', () => {
     expect(DANCE_DURATION_MS).toBe(60_000);
@@ -100,8 +108,9 @@ describe('Dance Solo runtime', () => {
     expect(DANCE_CUES.every(cue => ['arms', 'torso', 'legs'].every(group => cue.features.some(feature => feature.group === group)))).toBe(true);
 
     const runtime = new DanceSoloRuntime();
-    runtime.update(0, poseFor(DANCE_CUES[0]), true);
-    expect(runtime.update(DANCE_DURATION_MS, poseFor(DANCE_CUES[7]), true)).toMatchObject({
+    let result = runtime.update(0, poseFor(DANCE_CUES[0]), true);
+    result = feedUntil(runtime, 0, DANCE_DURATION_MS, poseFor(DANCE_CUES[7]));
+    expect(result).toMatchObject({
       elapsedMs: DANCE_DURATION_MS, remainingMs: 0, currentCueIndex: null, challengeCompleted: true,
     });
   });
@@ -121,7 +130,11 @@ describe('Dance Solo runtime', () => {
     const runtime = new DanceSoloRuntime();
     let result = runtime.update(0, poseFor(DANCE_CUES[0]), true);
     for (let index = 0; index < DANCE_CUES.length; index += 1) {
-      result = samples(runtime, DANCE_CUES[index]);
+      const cue = DANCE_CUES[index];
+      if (index > 0) {
+        feedUntil(runtime, DANCE_CUES[index - 1].atMs + DANCE_HOLD_MS, cue.atMs, poseFor(DANCE_CUES[5]));
+      }
+      result = samples(runtime, cue, cue.atMs, cue.atMs + DANCE_HOLD_MS);
       expect(result).toMatchObject({ currentCueIndex: index, completedCueCount: index + 1, success: true, cueScore: 100 });
     }
     expect(result.score).toBe(800);
@@ -140,9 +153,30 @@ describe('Dance Solo runtime', () => {
     expect(samples(runtime, cue, 800, 1_300)).toMatchObject({ completedCueCount: 1, cueResolved: true, score: 70 });
   });
 
+  it('freezes elapsed cue time and restarts a pending hold after a frame gap over 300 ms', () => {
+    const runtime = new DanceSoloRuntime();
+    const cue = DANCE_CUES[0];
+    const exact = poseFor(cue);
+    runtime.update(0, exact, true);
+    runtime.update(250, exact, true);
+
+    const afterGap = runtime.update(551, exact, true);
+    expect(afterGap).toMatchObject({
+      elapsedMs: 250,
+      currentCueIndex: 0,
+      completedCueCount: 0,
+      cueResolved: false,
+      success: false,
+    });
+
+    expect(runtime.update(801, exact, true)).toMatchObject({ elapsedMs: 500, completedCueCount: 0, success: false });
+    expect(runtime.update(1_051, exact, true)).toMatchObject({ elapsedMs: 750, completedCueCount: 1, success: true });
+  });
+
   it('does not carry a pending hold across the authored cue boundary', () => {
     const runtime = new DanceSoloRuntime();
     runtime.update(0, poseFor(DANCE_CUES[5]), true);
+    feedUntil(runtime, 0, 7_400, poseFor(DANCE_CUES[5]));
     runtime.update(7_400, poseFor(DANCE_CUES[0]), true);
     runtime.update(7_500, poseFor(DANCE_CUES[1]), true);
     let beforeBoundaryHoldCompletes = runtime.update(7_550, poseFor(DANCE_CUES[1]), true);
@@ -188,6 +222,7 @@ describe('Dance Solo runtime', () => {
 
     const left = leftRuntime.update(0, poseFor(leftCue, { leftElbowAngleDeg: 90 }), true);
     rightRuntime.update(0, poseFor(DANCE_CUES[0]), true);
+    feedUntil(rightRuntime, 0, 7_500, poseFor(DANCE_CUES[5]));
     const right = rightRuntime.update(7_500, poseFor(rightCue, { rightElbowAngleDeg: 90 }), true);
     expect(left.feedback).toBe('Straighten your left arm');
     expect(left.highlightedLandmarkIndexes).toEqual([11, 13, 15]);
@@ -211,6 +246,64 @@ describe('Dance Solo runtime', () => {
     const missing = runtime.update(350, exact.slice(0, 15), true);
     expect(missing.trackingRecovery).toBe(true);
     expect(missing.feedback).toMatch(/frame|visible|step back/i);
+  });
+
+  it('freezes active cue time and clears a partial hold while a required landmark is unreliable', () => {
+    const runtime = new DanceSoloRuntime();
+    const cue = DANCE_CUES[0];
+    const exact = poseFor(cue);
+    runtime.update(0, exact, true);
+    runtime.update(250, exact, true);
+
+    const lowConfidence = exact.map(point => ({ ...point }));
+    lowConfidence[15].visibility = 0.2;
+    const lost = runtime.update(300, lowConfidence, true);
+    expect(lost).toMatchObject({ elapsedMs: 250, currentCueIndex: 0, trackingRecovery: true, missedCueCount: 0 });
+
+    const stillLost = runtime.update(5_000, lowConfidence, true);
+    expect(stillLost).toMatchObject({ elapsedMs: 250, currentCueIndex: 0, trackingRecovery: true, missedCueCount: 0 });
+
+    const resumed = runtime.update(10_000, exact, true);
+    expect(resumed).toMatchObject({ elapsedMs: 250, currentCueIndex: 0, trackingRecovery: false, success: false });
+    let result = resumed;
+    for (let timestampMs = 10_050; timestampMs <= 10_500; timestampMs += 50) {
+      result = runtime.update(timestampMs, exact, true);
+    }
+    expect(result).toMatchObject({ elapsedMs: 750, currentCueIndex: 0, success: true, missedCueCount: 0 });
+  });
+
+  it('counts an uncompleted cue once when active time enters the next cue', () => {
+    const runtime = new DanceSoloRuntime();
+    const neutral = poseFor(DANCE_CUES[5]);
+    runtime.update(0, neutral, true);
+    const expired = feedUntil(runtime, 0, DANCE_CUE_INTERVAL_MS, neutral);
+    expect(expired).toMatchObject({ currentCueIndex: 1, missedCueCount: 1, completedCueCount: 0 });
+    expect(runtime.update(DANCE_CUE_INTERVAL_MS + 50, neutral, true).missedCueCount).toBe(1);
+  });
+
+  it('does not count a cue as missed while a tracking pause holds the cue boundary', () => {
+    const runtime = new DanceSoloRuntime();
+    const neutral = poseFor(DANCE_CUES[5]);
+    runtime.update(0, neutral, true);
+    feedUntil(runtime, 0, DANCE_CUE_INTERVAL_MS - 100, neutral);
+
+    const lowConfidence = neutral.map(point => ({ ...point }));
+    lowConfidence[15].visibility = 0.2;
+    expect(runtime.update(DANCE_CUE_INTERVAL_MS - 50, lowConfidence, true)).toMatchObject({
+      elapsedMs: DANCE_CUE_INTERVAL_MS - 100,
+      currentCueIndex: 0,
+      missedCueCount: 0,
+      trackingRecovery: true,
+    });
+    runtime.update(10_000, lowConfidence, true);
+    expect(runtime.update(20_000, neutral, true)).toMatchObject({
+      elapsedMs: DANCE_CUE_INTERVAL_MS - 100,
+      currentCueIndex: 0,
+      missedCueCount: 0,
+    });
+    const expired = runtime.update(20_100, neutral, true);
+    expect(expired).toMatchObject({ currentCueIndex: 1, missedCueCount: 1 });
+    expect(runtime.update(20_150, neutral, true).missedCueCount).toBe(1);
   });
 
   it('freezes cue time while paused and starts a fresh hold after resume', () => {

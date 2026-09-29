@@ -1,6 +1,6 @@
 export type Lane = -1 | 0 | 1;
 export type GestureId = 'LEAN_LEFT' | 'LEAN_RIGHT' | 'HANDS_UP_JUMP';
-export type TutorialGesture = GestureId | 'LEFT_HAND_UP' | 'RIGHT_HAND_UP';
+export type TutorialGesture = GestureId | 'LEFT_HAND_UP' | 'RIGHT_HAND_UP' | 'BLAST_LEFT' | 'BLAST_RIGHT';
 export interface Landmark { x: number; y: number; z: number; visibility: number; presence?: number }
 export interface PoseSample { timestampMs: number; frameWidth: number; frameHeight: number; landmarks: Landmark[]; players?: Landmark[][] }
 export interface Correction { code: string; text: string; highlightLandmarks: number[] }
@@ -10,7 +10,7 @@ export interface GestureAnalysis {
   calibrated: boolean; calibrationProgress: number; correction: Correction | null;
   landmarks: Landmark[];
 }
-export type GameMode = 'classic-run' | 'rhythm-run' | 'mirror-challenge' | 'dodge-arena' | 'beat-blaster' | 'dance-party' | 'six-seven' | 'dance-duo';
+export type GameMode = 'classic-run' | 'rhythm-run' | 'mirror-challenge' | 'dodge-arena' | 'beat-blaster' | 'dance-party' | 'six-seven' | 'dance-duo' | 'party-race';
 export type Stage = 'WELCOME' | 'LOADING' | 'CALIBRATION' | 'TUTORIAL' | 'READY' | 'COUNTDOWN' | 'PLAYING' | 'PAUSED' | 'RESULTS' | 'ERROR';
 export interface GameInput { lane: Lane; jump: boolean }
 export type ObstacleKind = 'low' | 'high';

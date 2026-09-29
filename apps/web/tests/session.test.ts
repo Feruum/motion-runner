@@ -94,6 +94,36 @@ describe('Session controller',()=>{
     for(let t=750;t<=1400;t+=50)s.tick(t,analysis(t,{landmarks:pose(t,0,'right').landmarks,handsDown:false}));
     expect(s.stage).toBe('READY');
   });
+  it('teaches left and right arm reaches before starting Beat Blaster',()=>{
+    const s=new SessionController(20000,'beat-blaster');s.stage='TUTORIAL';
+    expect(s.tutorialSteps).toEqual(['BLAST_LEFT','BLAST_RIGHT']);
+
+    const reach=(timestampMs:number,side:'left'|'right')=>{
+      const landmarks=pose(timestampMs).landmarks;
+      landmarks[15]={...landmarks[15],x:side==='left'?.76:.64};
+      landmarks[16]={...landmarks[16],x:side==='right'?.24:.36};
+      return analysis(timestampMs,{landmarks});
+    };
+
+    for(let t=0;t<=650;t+=50)s.tick(t,reach(t,'left'));
+    expect(s.tutorialIndex).toBe(1);
+    expect(s.awaitingNeutral).toBe(true);
+    s.tick(700,reach(700,'left'));
+    expect(s.awaitingNeutral).toBe(true);
+    s.tick(750,analysis(750));
+    expect(s.tutorialTarget).toBe('BLAST_RIGHT');
+    for(let t=800;t<=1450;t+=50)s.tick(t,reach(t,'right'));
+    expect(s.stage).toBe('READY');
+  });
+  it('does not accept the opposite arm during a Beat Blaster tutorial target',()=>{
+    const s=new SessionController(20000,'beat-blaster');s.stage='TUTORIAL';
+    const landmarks=pose(0).landmarks;
+    landmarks[15]={...landmarks[15],x:.64};
+    landmarks[16]={...landmarks[16],x:.24};
+    for(let t=0;t<=1000;t+=50)s.tick(t,analysis(t,{landmarks}));
+    expect(s.tutorialIndex).toBe(0);
+    expect(s.tutorialTarget).toBe('BLAST_LEFT');
+  });
   it('keeps lane and jump controls inactive during Six-Seven',()=>{
     const s=new SessionController(20000,'six-seven');s.stage='PLAYING';
     s.tick(0,analysis(0,{lane:-1,jumpTriggered:true,handsUp:true,handsDown:false}));

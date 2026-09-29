@@ -1,0 +1,33 @@
+.mirror-dialogue[hidden] { display: none; }
+.mirror-dialogue { position: absolute; z-index: 6; top: 104px; left: 24px; width: min(330px,calc(100% - 32px)); box-sizing: border-box; padding: 14px 20px; border-radius: 20px; background: #fff9ebf5; border: 2px solid #8dc9b6; color: #163d35; box-shadow: 0 10px 35px #173d3420; text-align: center; }
+.mirror-dialogue::after { content:''; position:absolute; left:calc(50% - 9px); bottom:-10px; width:16px; height:16px; background:#fff9eb; border-right:2px solid #8dc9b6; border-bottom:2px solid #8dc9b6; transform:rotate(45deg); }
+.mirror-dialogue-top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:9px; font:700 10px Outfit,sans-serif; letter-spacing:.09em; }
+.mirror-dialogue button { padding:5px 9px; border:1px solid #789d8d; border-radius:14px; background:transparent; color:#234b3c; cursor:pointer; font:600 11px Outfit,sans-serif; }
+.mirror-dialogue button:focus-visible { outline:3px solid #e5ae35; outline-offset:2px; }
+.mirror-dialogue strong { display:block; font:600 clamp(19px,2vw,28px)/1.15 Outfit,sans-serif; }
+.mirror-rule { display:block; margin-top:7px; font:400 12px 'DM Sans',sans-serif; }
+.mirror-hold { height:5px; overflow:hidden; margin-top:12px; border-radius:5px; background:#d9e7db; }
+.mirror-hold i { display:block; height:100%; width:0; background:#309478; border-radius:inherit; }
+#mirror-hint:empty { display:none; }
+.six-seven-guide[hidden] { display:none; }
+.six-seven-guide { position:absolute; z-index:6; left:24px; top:110px; width:250px; padding:18px; border-radius:18px; background:#fff9ebf5; color:#163d35; display:grid; gap:10px; border:2px solid #8dc9b6; }
+.six-seven-guide small { font:700 10px Outfit,sans-serif; letter-spacing:.08em; }
+.six-seven-guide strong { font:700 38px Outfit,sans-serif; }
+.six-seven-guide span { font:500 15px/1.5 'DM Sans',sans-serif; }
+.six-seven-guide b { font:700 13px Outfit,sans-serif; }
+body[data-selected-mode='six-seven'].run-focus .game-wordmark,
+body[data-selected-mode='six-seven'].run-focus .world-caption,
+body[data-selected-mode='six-seven'].run-focus .distance-track { visibility:hidden; }
+body[data-selected-mode='mirror-challenge'].run-focus .game-wordmark { visibility:hidden; }
+body[data-selected-mode='mirror-challenge'].run-focus .world-caption { visibility:hidden; }
+body[data-selected-mode='mirror-challenge'].run-focus .distance-track { opacity:.45; }
+@media(max-width:800px) {
+  .six-seven-guide { top:92px; left:12px; width:calc(100% - 185px); box-sizing:border-box; padding:10px; gap:6px; }
+  .six-seven-guide strong { font-size:26px; }
+  .six-seven-guide span { font-size:11px; }
+  .six-seven-guide small,.six-seven-guide b { font-size:9px; }
+  .mirror-dialogue { top:92px; left:12px; transform:none; width:calc(100% - 185px); min-width:165px; padding:11px; }
+  .mirror-dialogue-top { flex-wrap:wrap; gap:5px; margin-bottom:7px; font-size:8px; }
+  .mirror-dialogue strong { font-size:18px; }
+  .mirror-rule { font-size:10px; }
+}

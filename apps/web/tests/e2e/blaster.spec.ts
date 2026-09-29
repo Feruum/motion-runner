@@ -3,8 +3,8 @@ import { pose } from '../fixtures';
 
 const firstTarget = { x: 0.5 - 0.72 * 0.36, y: 0.58 - 0.36 * 0.36 };
 
-test('Beat Blaster is in the release picker and scores matching-hand entries in a short camera run', async ({ page }) => {
-  test.setTimeout(45_000);
+test('Beat Blaster scores matching-hand entries, recovers tracking and replays', async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/api/leaderboard**', route => route.fulfill({ json: { mode: 'classic-run', entries: [], personalBest: null } }));
@@ -35,16 +35,11 @@ test('Beat Blaster is in the release picker and scores matching-hand entries in 
 
   await page.goto('/');
   await expect(page.locator('[data-mode="beat-blaster"]')).toBeVisible();
-  await page.goto('/?dev=1');
-  const devBadge = await page.locator('#dev-badge').textContent();
-  if (!devBadge?.includes('DEV RUN')) {
-    test.skip(true, 'The short camera flow uses the Vite development server.');
-  }
 
   await expect(page.locator('[data-mode="beat-blaster"]')).toBeVisible();
   await page.locator('[data-mode="beat-blaster"]').click();
   await expect(page.locator('body')).toHaveAttribute('data-selected-mode', 'beat-blaster');
-  await expect(page.locator('#timer')).toHaveText('00:20');
+  await expect(page.locator('#timer')).toHaveText('01:00');
   await page.getByRole('button', { name: 'Enable camera' }).click();
 
   await expect(page.getByRole('heading', { name: 'Reach with your left hand.' })).toBeVisible({ timeout: 7000 });
@@ -76,14 +71,41 @@ test('Beat Blaster is in the release picker and scores matching-hand entries in 
   })).toBeGreaterThan(8);
 
   await setPose(page, firstReach('wrong'));
-  await expect(page.locator('#mode-cue-title')).toContainText('Use your left hand for this target.', { timeout: 3000 });
-  await expect(page.locator('#score')).toHaveText('000');
-
-  await setPose(page, pose(0));
-  await setPose(page, firstReach('left'));
+  // React inside the browser frame: locator polling plus several round trips can
+  // exhaust the 720ms target window while other Chrome instances are rendering.
+  await page.waitForFunction(sample => {
+    if (!document.querySelector('#mode-cue-title')?.textContent?.includes('Use your left hand for this target.')) return false;
+    if (document.querySelector('#score')?.textContent !== '000') throw new Error('Wrong hand scored a target');
+    (window as unknown as { poseFixture: { sample: typeof sample } }).poseFixture.sample = sample;
+    return true;
+  }, firstReach('left'), { timeout: 3000, polling: 'raf' });
   await expect(page.locator('#score')).toHaveText(/^(075|100)$/, { timeout: 4000 });
   await expect(page.locator('#mode-cue-title')).toContainText('hit with your left hand.');
-  await expect(page.locator('#mode-cue-score')).toContainText('1 / 9 TARGETS');
+  await expect(page.locator('#mode-cue-score')).toContainText('1 / 29 TARGETS');
+  const earnedScore = await page.locator('#score').textContent();
+  await setPose(page, { ...pose(0), landmarks: [] });
+  await expect(page.locator('body')).toHaveAttribute('data-stage', 'PAUSED');
+  const pausedTimer = await page.locator('#timer').textContent();
+  await page.waitForTimeout(500);
+  await expect(page.locator('#timer')).toHaveText(pausedTimer!);
+  await setPose(page, pose(0));
+  await expect(page.locator('body')).toHaveAttribute('data-stage', 'PLAYING', { timeout: 7000 });
+  await expect(page.locator('#score')).toHaveText(earnedScore!);
+  await expect(page.locator('.stage-results')).toBeVisible({ timeout: 70000 });
+  await expect(page.locator('#score')).toHaveText(earnedScore!);
+  await expect(page.locator('#timer')).toHaveText('00:00');
+  const totals = await page.locator('.results-metrics strong').allTextContents();
+  expect.soft(Number(totals[1]) + Number(totals[2]), 'All 29 targets must resolve').toBe(29);
+  await page.screenshot({ path: testInfo.outputPath('blaster-results.png') });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator('#replay-run')).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('blaster-mobile.png') });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole('button', { name: /^Run again/ }).click();
+  await expect(page.locator('body')).toHaveAttribute('data-stage', 'COUNTDOWN');
+  await expect(page.locator('#score')).toHaveText('000');
+  await expect(page.locator('body')).toHaveAttribute('data-stage', 'PLAYING', { timeout: 5000 });
   expect(errors).toEqual([]);
 });
 

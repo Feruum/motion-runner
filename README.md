@@ -15,6 +15,38 @@ bun run dev
 
 Open the Vite address printed in the terminal in current desktop Chrome or Edge. `bun run dev` starts Vite and the Hono API together; Vite proxies `/api` requests to the local Bun server on port 3002 (override with `API_PORT` if needed). Vite starts at port 5175 and automatically selects the next free port if needed. Choose **Enable camera** once, allow camera access, and stand back so your head, shoulders, hips and hands are visible. Lower both hands and stand upright for two seconds to calibrate. Follow the three-step movement tutorial, returning upright with hands down between moves. On the ready screen, hold both hands above your head for one second, lower them, and wait for the three-second countdown. Video and pose processing stay in the browser. The **Leaderboard** link in the top bar opens the Classic Run top five. A completed run submits the runner name and score to the Hono API, which stores one best result per player in local SQLite by default. Personal best also remains in browser storage.
 
+## Mirror Challenge
+
+Face the coach standing in the center of the scene. During **Watch me**, the coach demonstrates the movement; during **Your turn**, copy it like a mirror and hold the matching pose. Left and right match the player's screen direction. Combination tasks demonstrate both movements and ask you to return to neutral between them. The hold bar fills while the pose matches.
+
+The coach uses your selected KayKit character, facing you on a stationary platform. Hold each pose for half a second. A lean checks your torso; raised-hand and arms-out tasks also check the indicated arm shape. The main command stays visible alongside corrective hints. Rounds last 60 seconds, including in the local development UI.
+
+The coach gives short spoken instructions through the browser's speech synthesis when available. Use **Voice on / Voice off** in the speech bubble to mute or enable it; written commands remain visible. Speech stops when tracking pauses or you leave the mode. Voice availability depends on the browser and installed voices.
+
+Run `bun x playwright test --config playwright.mirror.config.ts` from `apps/web` for the isolated Chrome check of demonstrations, scoring, pause/recovery, voice controls, mobile framing and replay. This uses synthetic camera poses and a speech adapter stub; it does not measure physical-camera recognition or audible system voices.
+
+## Dance Party Solo and Duo
+
+Both modes use the selected KayKit character as a front-facing demonstrator on a stationary platform. The moving road, runner movement, obstacles and footstep effects are hidden while Dance is active. The guide names the current scoring pose, shows completed-pose progress and keeps the target visible as correction feedback changes. Copy the dancer like a mirror: left and right match your screen. Hold each pose for 0.5 seconds and keep your elbows, wrists, hips and feet in frame. The routine uses eight poses over 60 seconds; the displayed target follows the scoring cue directly.
+
+Dance Duo uses one shared demonstrator and the same target for both players. Player 1 and Player 2 keep separate feedback and scores; synchronized holds add the existing team bonus. If either player's full-body tracking is lost, the shared round pauses and resumes with the same pose after tracking recovers. Camera video and pose landmarks remain on the device.
+
+Run `bun x playwright test --config playwright.dance.config.ts` from `apps/web` for the isolated Chrome Dance checks. Synthetic poses can verify target synchronization, scoring, player identity feedback, pause and replay; they do not measure physical-camera recognition.
+
+## Six-Seven Challenge
+
+Stand facing the camera, bend your elbows and hold your palms up near your waist and chest. Follow the stationary character: lift one hand higher, then switch which hand is higher within two seconds. Either side can start. Two movements (`6 → 7`) count as one repetition; four alternating movements count as two. Holding a hand or leaning your whole body does not add repetitions. Keep both wrists, shoulders and hips visible.
+
+The two-step tutorial uses the same hand-height gesture as the counter. Return both hands to a level, lowered position between tutorial steps. On the ready screen, use **Start game** with hands lowered or the usual both-hands-up start gesture. The start gesture is separate from the waist/chest movement used during the game.
+
+## Rhythm Run
+
+Collect the visible yellow stars approaching along the track. Lean left or right and stay in the lane of a low star; entering the lane early works. High stars travel down the center: return upright, then raise both hands when the jump cue appears. Lower your hands between jumps. The glowing pickup line marks where stars meet the runner. Stars arrive every four beats of the 120 BPM backing track.
+
+A low star is collected only in its lane while the runner is low enough; a high star requires the runner to be airborne. Holding raised hands without a new jump does not collect a high star. Collected stars burst and award points, consecutive pickups build a combo, and missed stars pass behind the runner. The first four stars show contextual instructions; the result screen counts collected and missed stars. Camera recovery freezes the stars with the run, and replay starts a fresh collection.
+
+Run `bun x playwright test --config playwright.rhythm.config.ts` from `apps/web` for the isolated Chrome check with a synthetic camera, visible low/high pickups, an intentional miss, pause/recovery and replay.
+
 ## Party Race
 
 Choose **Party Race** in the mode picker (or open `?mode=party-race`). **Play with bots** runs a local eight-runner race without an API connection. **Create room** and **Join room** use the Bun server for a private race with friends; share the displayed six-character room code or invitation link. Every human calibrates their own camera, learns steering and jumping, and selects **Ready to race**. The host starts the three-second countdown. Bot fill can be disabled in the lobby.

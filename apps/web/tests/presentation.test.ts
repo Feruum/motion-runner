@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { RunnerWorld } from '../src/presentation/world';
+import { RhythmStarsPresentation } from '../src/presentation/rhythm-stars';
+import { MirrorCoachPresentation } from '../src/presentation/mirror-coach';
 import { CONFIG as C, GameEngine } from '@motion-runner/game';
 import { analysis } from './fixtures';
 
@@ -8,10 +10,15 @@ function harness() {
   const world = Object.create(RunnerWorld.prototype) as RunnerWorld;
   const actor = new THREE.Group(), moving = new THREE.Group();
   const mixer = { update: vi.fn(), stopAllAction: vi.fn(), uncacheRoot: vi.fn() };
+  const camera = new THREE.PerspectiveCamera(44, 0.6, 0.1, 240);
+  camera.position.set(0, 4.8, 10.8);
+  camera.lookAt(0, 1.4, -18);
   const playAction = vi.fn((name: string) => Object.assign(world, { currentActionName: name }));
   const burst = vi.fn();
   Object.assign(world, {
     actor, moving, mixer, actions: new Map(), obstacleGroups: new Map(),
+    rhythmStars: new RhythmStarsPresentation(),
+    mirrorCoach: new MirrorCoachPresentation(), camera, cameraCoachMix: 0,
     currentJumpMs: -Infinity, reactionUntilMs: -Infinity, currentActionName: 'Idle',
     lastSuccessCount: 0, lastHitCount: 0, elapsedMs: 0, previousStage: 'WELCOME',
     previewTimeMs: 0, previewJumpStartedMs: -Infinity, previewPoseTime: -1,
@@ -20,7 +27,7 @@ function harness() {
     lowFallback: new THREE.Mesh(new THREE.BoxGeometry(2.5, .52, .75)),
     tallFallback: new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.2, .7)),
   });
-  return { world, actor, moving, mixer, playAction, burst };
+  return { world, actor, moving, mixer, playAction, burst, camera };
 }
 
 describe('Runner presentation', () => {

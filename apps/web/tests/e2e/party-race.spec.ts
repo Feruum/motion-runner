@@ -47,15 +47,17 @@ async function learn(page:Page){
   await expect(page.locator('body')).toHaveAttribute('data-camera-stage','ready');await move(page);
 }
 function watchRoom(page:Page){
-  const state:{room:RaceRoomSnapshot|null;id:string;welcomes:number}={room:null,id:'',welcomes:0};
+  const state:{room:RaceRoomSnapshot|null;id:string;welcomes:number;protocolErrors:string[]}={room:null,id:'',welcomes:0,protocolErrors:[]};
   page.on('websocket',socket=>socket.on('framereceived',frame=>{
     let message:RaceServerMessage;try{message=JSON.parse(String(frame.payload));}catch{return;}
     if(message.type==='welcome'){state.id=message.playerId;state.welcomes++;state.room=message.room;}
     if(message.type==='room')state.room=message.room;
+    if(message.type==='error')state.protocolErrors.push(message.message);
   }));return state;
 }
 
 test('offers Party Race from the game picker and plays offline with bots',async({page},testInfo)=>{
+  test.setTimeout(180_000);
   await syntheticCamera(page);await page.goto('.');
   await page.getByRole('button',{name:/Party Race/}).click();
   await page.getByRole('button',{name:'Play with bots',exact:true}).click();
@@ -68,6 +70,19 @@ test('offers Party Race from the game picker and plays offline with bots',async(
   await page.setViewportSize({width:390,height:844});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.screenshot({path:testInfo.outputPath('mobile-race.png')});
+  // Exercise the time-limit path as well as the online finish path below.
+  await move(page,0,'down',false);
+  await expect(page.locator('#race-tracking-notice')).toContainText('Show your body');
+  await expect(page.locator('.race-results')).toBeVisible({timeout:135_000});
+  await expect(page.locator('.race-results')).toContainText('DNF');
+  await expect(page.locator('#race-error')).toBeHidden();
+  await page.screenshot({path:testInfo.outputPath('offline-results-mobile.png')});
+  await move(page);
+  await page.getByRole('button',{name:'Race again',exact:true}).click();
+  await expect(page.locator('body')).toHaveAttribute('data-race-phase','lobby');
+  await page.getByRole('button',{name:'Ready to race',exact:true}).click();
+  await page.getByRole('button',{name:'Start race',exact:true}).click();
+  await expect(page.locator('body')).toHaveAttribute('data-race-phase','racing');
 });
 
 test('two camera players and six bots race through a real room, reconnect and rematch',async({page,browser},testInfo)=>{
@@ -127,6 +142,16 @@ test('two camera players and six bots race through a real room, reconnect and re
   }
   await expect(page.locator('.race-results')).toBeVisible();
   await expect(other.locator('.race-results')).toBeVisible();
+  // Reproduce a final camera packet that arrives after the server has finished.
+  await other.evaluate(()=>{
+    const socket=(window as unknown as {raceTestSocket:WebSocket}).raceTestSocket;
+    socket.send(JSON.stringify({type:'input',seq:999999,steer:1,jump:true,tracking:true}));
+  });
+  await page.waitForTimeout(400); // Includes the second player's simulated 120ms uplink delay.
+  await expect(page.locator('#race-error')).toBeHidden();
+  await expect(other.locator('#race-error')).toBeHidden();
+  expect(one.protocolErrors).toEqual([]);
+  expect(two.protocolErrors).toEqual([]);
   await testInfo.attach('finish-results',{body:JSON.stringify(one.room!.race,null,2),contentType:'application/json'});
   console.log('Party Race finishes',JSON.stringify(one.room!.race!.players.map(p=>({name:p.name,status:p.status,finishMs:p.finishMs,z:p.z}))));
   expect(one.room!.race!.players.filter(p=>!p.isBot).every(p=>p.status==='finished')).toBe(true);
@@ -136,6 +161,19 @@ test('two camera players and six bots race through a real room, reconnect and re
   await hostPage.getByRole('button',{name:'Race again',exact:true}).click();
   await expect(page.locator('body')).toHaveAttribute('data-race-phase','lobby');
   await expect(other.locator('body')).toHaveAttribute('data-race-phase','lobby');
+  // Hiding a results/lobby tab must not send a new control packet.
+  // Inspect the existing connection directly around visibilitychange.
+  const sentOnHide=await page.evaluate(()=>{
+    const socket=(window as unknown as {raceTestSocket:WebSocket}).raceTestSocket;
+    const send=socket.send;let inputs=0;
+    socket.send=function(data){if(JSON.parse(String(data)).type==='input')inputs++;send.call(this,data);};
+    Object.defineProperty(document,'hidden',{configurable:true,value:true});
+    try{document.dispatchEvent(new Event('visibilitychange'));}finally{
+      delete (document as unknown as {hidden?:boolean}).hidden;socket.send=send;
+    }
+    return inputs;
+  });
+  expect(sentOnHide).toBe(0);
   expect(one.room!.code).toBe(code);
   await page.getByRole('button',{name:'Ready to race',exact:true}).click();
   await other.getByRole('button',{name:'Ready to race',exact:true}).click();
@@ -143,6 +181,8 @@ test('two camera players and six bots race through a real room, reconnect and re
   await expect(page.locator('body')).toHaveAttribute('data-race-phase','racing');
   expect(one.room!.race!.elapsedMs).toBeLessThan(2000);
   expect(errors).toEqual([]);
+  expect(one.protocolErrors).toEqual([]);
+  expect(two.protocolErrors).toEqual([]);
   await testInfo.attach('network-result',{body:JSON.stringify({room:code,welcomes:one.welcomes,secondPlayerUplinkDelayMs:120,errors}),contentType:'application/json'});
   await otherContext.close();
 });

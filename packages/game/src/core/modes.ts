@@ -6,6 +6,9 @@ import type { BeatBlasterHighlight, BeatBlasterInput, BeatBlasterResult } from '
 import { DanceSoloRuntime, DANCE_CUES } from './dance';
 import { DanceDuoRuntime } from './dance-duo';
 import { MirrorChallengeRuntime } from './mirror';
+import type { MirrorChallengeResult } from './mirror';
+import { RhythmRunRuntime } from './rhythm';
+import { RHYTHM_PICKUP_WINDOW_MS, type RhythmFrame, type RhythmSnapshot } from './rhythm-types';
 import type { GameMode, GestureAnalysis, GameEvent, Landmark, PoseSample, Wave } from './types';
 
 export interface ModeDefinition {
@@ -21,12 +24,12 @@ export interface ModeDefinition {
 export const GAME_MODES: readonly ModeDefinition[] = [
   { id: 'party-race', title: 'Party Race', subtitle: 'Race friends and bots', instruction: 'Lean to steer freely. Raise both hands to jump. Reach the finish together.', icon: '⚑', music: false },
   { id: 'classic-run', title: 'Classic Run', subtitle: 'Run the skyway', instruction: 'Lean to change lanes. Raise both hands to jump.', icon: '↗', music: false },
-  { id: 'rhythm-run', title: 'Rhythm Run', subtitle: 'Move on the beat', instruction: 'Follow each move cue and hit it as the beat lands.', icon: '♫', music: true },
+  { id: 'rhythm-run', title: 'Rhythm Run', subtitle: 'Collect stars on the beat', instruction: 'Lean to collect low stars. Jump to collect high stars.', icon: '★', music: true },
   { id: 'mirror-challenge', title: 'Mirror Challenge', subtitle: 'Copy the coach', instruction: 'Match the coach’s pose and hold it when the pulse lands.', icon: '◉', music: true },
   { id: 'dodge-arena', title: 'Dodge Arena', subtitle: 'Keep your combo alive', instruction: 'Watch the warning and lean into a safe lane.', icon: '⚡', music: false },
   { id: 'beat-blaster', title: 'Beat Blaster', subtitle: 'Reach for the targets', instruction: 'Extend the matching arm toward each glowing target on the beat.', icon: '✦', music: true },
   { id: 'dance-party', title: 'Dance Party · Solo', subtitle: 'Copy a short routine', instruction: 'Follow the left, right and hands-up choreography in time.', icon: '✺', music: true },
-  { id: 'six-seven', title: 'Six-Seven Challenge', subtitle: 'Alternate hands', instruction: 'Raise one hand, switch hands, then return to the first hand.', icon: '67', music: false },
+  { id: 'six-seven', title: 'Six-Seven Challenge', subtitle: 'Alternate hands', instruction: 'Raise one hand, then the other: each pair counts as 1 rep. Keep alternating.', icon: '67', music: false },
   { id: 'dance-duo', title: 'Dance Party · Duo', subtitle: 'Two players, one routine', instruction: 'Stand side by side. Both players copy the same cue together.', icon: 'Ⅱ', music: true, twoPlayers: true },
 ];
 
@@ -61,6 +64,8 @@ export interface ModeSnapshot {
   teamScore: number;
   synchronizedCueCount: number;
   trackingRecovery: boolean;
+  rhythm: RhythmSnapshot | null;
+  mirror: MirrorChallengeResult | null;
 }
 
 const chartMoves: Record<'rhythm-run' | 'beat-blaster', MoveCue[]> = {
@@ -71,9 +76,6 @@ const chartMoves: Record<'rhythm-run' | 'beat-blaster', MoveCue[]> = {
 const intervalMs: Record<keyof typeof chartMoves, number> = {
   'rhythm-run': 2000, 'beat-blaster': 1600,
 };
-
-const RHYTHM_WINDOW_MS = 360;
-const RHYTHM_FEEDBACK_MS = 800;
 
 export function buildModeChart(mode: GameMode, durationMs: number): ModeCue[] {
   if (!(mode in chartMoves)) return [];
@@ -185,6 +187,7 @@ function reachEdge(move: MoveCue, pose: GestureAnalysis, previous: GestureAnalys
 
 export class ModeEngine {
   readonly chart: ModeCue[];
+  readonly rhythm: RhythmRunRuntime | null;
   score = 0;
   cleared = 0;
   misses = 0;
@@ -201,6 +204,7 @@ export class ModeEngine {
   private readonly dodge: DodgeArenaRuntime | null;
   private readonly blaster: BeatBlasterRuntime | null;
   private readonly mirror: MirrorChallengeRuntime | null;
+  private lastMirrorResult: MirrorChallengeResult | null = null;
   private readonly danceSolo: DanceSoloRuntime | null;
   private readonly danceDuo: DanceDuoRuntime | null;
   private lastBlasterResult: BeatBlasterResult | null = null;
@@ -208,6 +212,7 @@ export class ModeEngine {
   private readonly missedMirrorTasks = new Set<number>();
   private readonly completedMirrorTasks = new Set<number>();
   private poseFinished = false;
+  private completedDanceCues = 0;
   private poseCueName: string | null = null;
   private poseCueIndex: number | null = null;
   private poseCueCount = 0;
@@ -225,6 +230,7 @@ export class ModeEngine {
 
   constructor(readonly mode: GameMode, durationMs: number) {
     this.chart = buildModeChart(mode, durationMs);
+    this.rhythm = mode === 'rhythm-run' ? new RhythmRunRuntime(durationMs) : null;
     this.dodge = mode === 'dodge-arena' ? new DodgeArenaRuntime(durationMs) : null;
     this.blaster = mode === 'beat-blaster'
       ? new BeatBlasterRuntime(BEAT_BLASTER_CHART.filter(cue => cue.atMs < durationMs))
@@ -241,9 +247,11 @@ export class ModeEngine {
     for (const cue of this.chart) cue.resolved = false;
     this.previous = null;
     this.sixSeven.reset();
+    this.rhythm?.reset();
     this.dodge?.reset();
     this.blaster?.reset();
     this.mirror?.reset();
+    this.lastMirrorResult = null;
     this.danceSolo?.reset();
     this.danceDuo?.reset();
     this.lastBlasterResult = null;
@@ -251,6 +259,7 @@ export class ModeEngine {
     this.missedMirrorTasks.clear();
     this.completedMirrorTasks.clear();
     this.poseFinished = false;
+    this.completedDanceCues = 0;
     this.poseCueName = null;
     this.poseCueIndex = null;
     this.poseCueCount = 0;
@@ -269,7 +278,18 @@ export class ModeEngine {
     this.feedbackKind = 'neutral';
   }
 
-  update(elapsedMs: number, primary: GestureAnalysis, secondary?: GestureAnalysis | null, blasterInput?: BeatBlasterInput, poseSample?: PoseSample): GameEvent[] {
+  update(elapsedMs: number, primary: GestureAnalysis, secondary?: GestureAnalysis | null, blasterInput?: BeatBlasterInput, poseSample?: PoseSample, rhythmFrame?: RhythmFrame): GameEvent[] {
+    if (this.poseFinished && (this.danceSolo || this.danceDuo)) return [];
+    if (this.mode === 'rhythm-run' && this.rhythm) {
+      const events = this.rhythm.update(elapsedMs, rhythmFrame ?? {
+        lane: primary.lane,
+        jumpHeight: 0,
+        trackingValid: false,
+      });
+      this.syncRhythm(this.rhythm.snapshot(elapsedMs));
+      this.previous = primary;
+      return events;
+    }
     if (this.mode === 'beat-blaster' && this.blaster) {
       if (!blasterInput) return [];
       // Use active session time so recovery pauses and the pre-run countdown do
@@ -302,8 +322,8 @@ export class ModeEngine {
         this.cleared++;
         this.combo++;
         this.bestCombo = Math.max(this.bestCombo, this.combo);
-        this.score += 100;
-        this.playerOneScore += 100;
+        this.score += 1;
+        this.playerOneScore += 1;
         this.setFeedback(result.feedback, 'good', elapsedMs);
         this.previous = primary;
         return ['clear'];
@@ -342,8 +362,8 @@ export class ModeEngine {
     if (!primary.trackingValid) return [];
     const events: GameEvent[] = [];
     const isPoseRound = this.mode === 'mirror-challenge' || this.mode === 'dance-party' || this.mode === 'dance-duo';
-    const earlyWindowMs = isPoseRound ? 950 : this.mode === 'rhythm-run' ? RHYTHM_WINDOW_MS : 700;
-    const lateWindowMs = this.mode === 'rhythm-run' ? RHYTHM_WINDOW_MS : 550;
+    const earlyWindowMs = isPoseRound ? 950 : 700;
+    const lateWindowMs = 550;
     const activeCue = this.chart.find(item => !item.resolved && elapsedMs >= item.atMs - earlyWindowMs && elapsedMs <= item.atMs + lateWindowMs);
 
     // Expire every missed cue before evaluating the one active cue. Keeping expiry
@@ -391,29 +411,75 @@ export class ModeEngine {
     return events;
   }
 
+  /** Close unresolved dance cues when the owning session reaches its deadline.
+   * Camera time can lag behind session time after startup, recovery or a frame gap.
+   * Finalization never awards a pose or synchronization bonus from a stale frame.
+   */
+  finish(): void {
+    if (this.mode === 'rhythm-run' && this.rhythm) {
+      this.rhythm.finish();
+      this.syncRhythm(this.rhythm.snapshot(0));
+      return;
+    }
+    if (this.mode !== 'dance-party' && this.mode !== 'dance-duo') return;
+    if (this.poseFinished) return;
+    this.misses = DANCE_CUES.length * (this.mode === 'dance-duo' ? 2 : 1) - this.completedDanceCues;
+    this.poseFinished = true;
+    this.poseCueName = 'Complete';
+    this.poseCueIndex = null;
+    this.poseCueCount = DANCE_CUES.length;
+    this.posePhase = 'complete';
+    this.trackingRecovery = false;
+    this.feedback = this.playerOneFeedback = 'Dance complete';
+    this.playerTwoFeedback = this.mode === 'dance-duo' ? 'Dance complete' : '';
+    this.feedbackKind = 'neutral';
+    this.highlightedLandmarkIndexes = [];
+    this.playerOneHighlights = [];
+    this.playerTwoHighlights = [];
+  }
+
   snapshot(elapsedMs: number): ModeSnapshot {
+    const rhythm = this.rhythm?.snapshot(elapsedMs) ?? null;
+    if (rhythm) this.syncRhythm(rhythm);
     const next = this.chart.find(item => !item.resolved) ?? null;
     const isPoseRound = this.mode === 'mirror-challenge' || this.mode === 'dance-party' || this.mode === 'dance-duo';
-    const earlyWindowMs = isPoseRound ? 950 : this.mode === 'rhythm-run' ? RHYTHM_WINDOW_MS : 700;
-    const lateWindowMs = this.mode === 'rhythm-run' ? RHYTHM_WINDOW_MS : 550;
+    const earlyWindowMs = isPoseRound ? 950 : this.mode === 'rhythm-run' ? RHYTHM_PICKUP_WINDOW_MS : 700;
+    const lateWindowMs = this.mode === 'rhythm-run' ? RHYTHM_PICKUP_WINDOW_MS : 550;
     const activeCue = next && elapsedMs >= next.atMs - earlyWindowMs && elapsedMs <= next.atMs + lateWindowMs ? next : null;
-    // Briefly show the result, then reveal the next preparation / movement cue.
-    const showFeedback = this.mode !== 'rhythm-run'
-      || (!activeCue && elapsedMs - this.lastFeedbackAt < RHYTHM_FEEDBACK_MS);
     return { score: this.score, cleared: this.cleared, misses: this.misses, collisions: this.collisions, combo: this.combo, bestCombo: this.bestCombo,
-      playerOneScore: this.playerOneScore, playerTwoScore: this.playerTwoScore, activeCue, feedback: showFeedback ? this.feedback : '',
-      feedbackKind: showFeedback ? this.feedbackKind : 'neutral', sixSevenCount: this.sixSevenCount,
+      playerOneScore: this.playerOneScore, playerTwoScore: this.playerTwoScore, activeCue, feedback: rhythm?.feedback ?? this.feedback,
+      feedbackKind: rhythm?.feedbackKind ?? this.feedbackKind, sixSevenCount: this.sixSevenCount,
       blasterHighlight: this.lastBlasterResult?.highlight ?? null,
       poseCueName: this.poseCueName, poseCueIndex: this.poseCueIndex, poseCueCount: this.poseCueCount, posePhase: this.posePhase,
       highlightedLandmarkIndexes: [...this.highlightedLandmarkIndexes],
       playerOneHighlights: [...this.playerOneHighlights], playerTwoHighlights: [...this.playerTwoHighlights],
       playerOneFeedback: this.playerOneFeedback, playerTwoFeedback: this.playerTwoFeedback,
-      teamScore: this.teamScore, synchronizedCueCount: this.synchronizedCueCount, trackingRecovery: this.trackingRecovery };
+      teamScore: this.teamScore, synchronizedCueCount: this.synchronizedCueCount, trackingRecovery: this.trackingRecovery, rhythm,
+      mirror: this.lastMirrorResult ? {
+        ...this.lastMirrorResult,
+        highlightedLandmarkIndexes: [...this.lastMirrorResult.highlightedLandmarkIndexes],
+      } : null };
+  }
+
+  private syncRhythm(snapshot: RhythmSnapshot): void {
+    this.score = snapshot.score;
+    this.cleared = snapshot.cleared;
+    this.misses = snapshot.misses;
+    this.combo = snapshot.combo;
+    this.bestCombo = snapshot.bestCombo;
+    this.playerOneScore = snapshot.score;
+    this.feedback = snapshot.feedback;
+    this.feedbackKind = snapshot.feedbackKind;
+    const resolvedAtMs = new Set(snapshot.stars
+      .filter(star => star.status !== 'upcoming')
+      .map(star => star.atMs));
+    for (const cue of this.chart) cue.resolved = resolvedAtMs.has(cue.atMs);
   }
 
   private updateMirror(elapsedMs: number, primary: GestureAnalysis): GameEvent[] {
     const timestampMs = this.poseTimestamp(elapsedMs);
     const result = this.mirror!.update(timestampMs, primary.landmarks, primary.trackingValid);
+    this.lastMirrorResult = result;
     this.score = result.score;
     this.cleared = result.completedTaskCount;
     this.poseCueName = result.taskName;
@@ -459,6 +525,7 @@ export class ModeEngine {
     const result = this.danceSolo!.update(timestampMs, primary.landmarks, primary.trackingValid);
     this.score = result.score;
     this.cleared = result.completedCueCount;
+    this.completedDanceCues = result.completedCueCount;
     this.misses = result.missedCueCount;
     this.playerOneScore = result.score;
     this.poseCueName = result.currentCueName;
@@ -503,6 +570,7 @@ export class ModeEngine {
     this.synchronizedCueCount = result.synchronizedCueCount;
     this.score = result.playerOneScore + result.playerTwoScore + result.teamScore;
     this.cleared = Math.min(result.players[0].completedCueCount, result.players[1].completedCueCount);
+    this.completedDanceCues = result.players[0].completedCueCount + result.players[1].completedCueCount;
     this.combo = result.synchronizedCueCount;
     this.bestCombo = Math.max(this.bestCombo, this.combo);
     this.poseCueName = result.currentCueName;

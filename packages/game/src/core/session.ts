@@ -1,5 +1,6 @@
 import { CONFIG as C } from './config';
 import { GameEngine } from './game';
+import { sixSevenRaisedHand } from './six-seven';
 import type { GameMode, GestureAnalysis, Stage, TutorialGesture } from './types';
 
 export const standardTutorialSteps: readonly TutorialGesture[]=['LEAN_LEFT','LEAN_RIGHT','HANDS_UP_JUMP'];
@@ -87,7 +88,8 @@ export class SessionController {
   private tickTutorial(now:number,pose:GestureAnalysis){
     if(!pose.trackingValid||!pose.calibrated||now-pose.timestampMs>C.staleMs){this.tutorialMatchSince=-1;return;}
     if(this.awaitingNeutral){
-      if(pose.lane===0&&pose.handsDown&&(this.tutorialMode!=='beat-blaster'||!this.hasBlasterReach(pose))){this.awaitingNeutral=false;this.tutorialSuccess=false;}
+      const sixSevenNeutral=this.tutorialMode!=='six-seven'||sixSevenRaisedHand(pose.landmarks)===null;
+      if(pose.lane===0&&pose.handsDown&&sixSevenNeutral&&(this.tutorialMode!=='beat-blaster'||!this.hasBlasterReach(pose))){this.awaitingNeutral=false;this.tutorialSuccess=false;}
       else this.tutorialSuccess=false;
       return;
     }
@@ -106,13 +108,7 @@ export class SessionController {
     }
   }
   private matchesSingleRaisedHand(pose:GestureAnalysis,hand:'left'|'right'){
-    if(!pose.handsTracked)return false;
-    const l=pose.landmarks;if(l.length<25)return false;
-    const eyeY=Math.min(l[2].y,l[5].y);
-    const torso=Math.max(.08,((l[23].y+l[24].y)/2)-((l[11].y+l[12].y)/2));
-    const left=l[15].visibility>=C.confidence&&l[15].y<eyeY-C.headMargin*torso;
-    const right=l[16].visibility>=C.confidence&&l[16].y<eyeY-C.headMargin*torso;
-    return hand==='left'?left&&!right:right&&!left;
+    return pose.handsTracked&&sixSevenRaisedHand(pose.landmarks)===hand;
   }
   private matchesBlasterReach(pose:GestureAnalysis,hand:'left'|'right'){
     const reach=this.blasterReach(pose);
@@ -140,6 +136,12 @@ export class SessionController {
     if(resetGame)this.game.reset();else this.game.paused=true;
   }
   private pause(){this.stage='PAUSED';this.game.paused=true;this.recoverySince=-1;}
+  requestStart(now:number,pose:GestureAnalysis):boolean{
+    if(this.stage!=='READY'||!pose.calibrated||!pose.trackingValid||!pose.handsTracked||!pose.handsDown||now-pose.timestampMs>C.staleMs||documentHiddenSafe())return false;
+    this.lastJumpEventAt=pose.timestampMs;
+    this.beginCountdown(now);
+    return true;
+  }
   requestReplay(now:number,pose:GestureAnalysis):boolean{
     if(this.stage!=='RESULTS'||!pose.calibrated||!pose.trackingValid||now-pose.timestampMs>C.staleMs||documentHiddenSafe())return false;
     this.lastJumpEventAt=pose.timestampMs;

@@ -36,9 +36,9 @@ test('presents the complete starting experience and adapts to a narrow display',
   await expect(page.locator('body')).toHaveAttribute('data-runner-animations', 'Idle,Running_A,Jump_Full_Short,Hit_A,Cheer');
   await expect(page.locator('.privacy-label')).toHaveText('LOCAL ONLY');
   await expect(page.getByText('Only your runner name and best score are saved.', { exact: false })).toBeVisible();
-  await expect(page.getByText('Lean left')).toBeVisible();
-  await expect(page.getByText('Lean right')).toBeVisible();
-  await expect(page.getByText('Hands up')).toBeVisible();
+  await expect(page.locator('#move-left').getByText('Lean left', { exact: true })).toBeVisible();
+  await expect(page.locator('#move-right').getByText('Lean right', { exact: true })).toBeVisible();
+  await expect(page.locator('#move-jump').getByText('Hands up', { exact: true })).toBeVisible();
 
   await page.waitForLoadState('networkidle');
   await page.waitForTimeout(900);
@@ -62,6 +62,19 @@ test('loads the local camera model, WASM and KayKit models from the production b
     }
   });
   await page.addInitScript(() => {
+    const processing = { samples: 0, freshSamples: 0 };
+    Object.assign(window, { realPoseProcessing: processing });
+    const RealWorker = window.Worker;
+    window.Worker = class extends RealWorker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        this.addEventListener('message', event => {
+          if (event.data.type !== 'pose') return;
+          processing.samples++;
+          if (performance.now() - event.data.sample.timestampMs <= 300) processing.freshSamples++;
+        });
+      }
+    };
     Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
       configurable: true,
       value: async () => {
@@ -100,4 +113,10 @@ test('loads the local camera model, WASM and KayKit models from the production b
   for (const [path, status] of assetResponses) expect(status, `${path} should be served`).toBe(200);
   await expect(page.getByText('BODY TRACKED')).not.toBeVisible();
   await expect(page.locator('#camera-status')).toContainText('SHOW HEAD, SHOULDERS AND HIPS');
+  // A loaded model and playing video do not prove that inference returns frames.
+  // Keep the real worker/model and require fresh results beyond initial startup.
+  await expect.poll(() => page.evaluate(() =>
+    (window as unknown as { realPoseProcessing: { freshSamples: number } }).realPoseProcessing.freshSamples),
+    { timeout: 25_000, intervals: [100, 250] }).toBeGreaterThan(5);
+  await expect(page.locator('body')).toHaveAttribute('data-stage', 'CALIBRATION');
 });

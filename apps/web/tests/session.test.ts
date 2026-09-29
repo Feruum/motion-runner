@@ -2,6 +2,16 @@ import { describe,expect,it } from 'vitest';
 import { SessionController } from '@motion-runner/game';
 import { analysis, pose } from './fixtures';
 describe('Session controller',()=>{
+  it('starts from Ready by button only with a fresh calibrated body and lowered hands',()=>{
+    const s=new SessionController(60000,'six-seven');s.stage='READY';
+    expect(s.requestStart(1000,analysis(0))).toBe(false);
+    expect(s.requestStart(1000,analysis(1000,{handsDown:false}))).toBe(false);
+    expect(s.requestStart(1000,analysis(1000,{handsTracked:false}))).toBe(false);
+    expect(s.requestStart(1000,analysis(1000,{calibrated:false}))).toBe(false);
+    expect(s.requestStart(1000,analysis(1000))).toBe(true);
+    expect(s.stage).toBe('COUNTDOWN');
+    expect(s.requestStart(1050,analysis(1050))).toBe(false);
+  });
   it('teaches only lane changes and disables jump input in Dodge Arena',()=>{
     const s=new SessionController(20000,'dodge-arena');
     expect(s.tutorialSteps).toEqual(['LEAN_LEFT','LEAN_RIGHT']);
@@ -87,11 +97,26 @@ describe('Session controller',()=>{
   it('teaches both hands separately before starting Six-Seven',()=>{
     const s=new SessionController(20000,'six-seven');s.stage='TUTORIAL';
     expect(s.tutorialTarget).toBe('LEFT_HAND_UP');
-    for(let t=0;t<=650;t+=50)s.tick(t,analysis(t,{landmarks:pose(t,0,'left').landmarks,handsDown:false}));
+    const hands=(timestampMs:number,hand:'left'|'right')=>{
+      const landmarks=pose(timestampMs).landmarks;
+      landmarks[15].y=hand==='left'?.48:.72;
+      landmarks[16].y=hand==='right'?.48:.72;
+      return landmarks;
+    };
+    const overhead=pose(0).landmarks;
+    overhead[15].y=.09;overhead[16].y=.72;
+    for(let t=0;t<=650;t+=50)s.tick(t,analysis(t,{landmarks:overhead,handsDown:false}));
+    expect(s.tutorialIndex).toBe(0);
+    for(let t=700;t<=1350;t+=50)s.tick(t,analysis(t,{landmarks:hands(t,'left'),handsDown:true}));
     expect(s.tutorialIndex).toBe(1);expect(s.awaitingNeutral).toBe(true);
-    s.tick(700,analysis(700));
+    s.tick(1400,analysis(1400,{landmarks:hands(1400,'left'),handsDown:true}));
+    expect(s.awaitingNeutral).toBe(true);
+    const level=pose(1450).landmarks;
+    level[15].y=.58;level[16].y=.58;
+    s.tick(1450,analysis(1450,{landmarks:level,handsDown:true}));
+    expect(s.awaitingNeutral).toBe(false);
     expect(s.tutorialTarget).toBe('RIGHT_HAND_UP');
-    for(let t=750;t<=1400;t+=50)s.tick(t,analysis(t,{landmarks:pose(t,0,'right').landmarks,handsDown:false}));
+    for(let t=1500;t<=2150;t+=50)s.tick(t,analysis(t,{landmarks:hands(t,'right'),handsDown:true}));
     expect(s.stage).toBe('READY');
   });
   it('teaches left and right arm reaches before starting Beat Blaster',()=>{

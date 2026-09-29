@@ -10,7 +10,14 @@ export type MirrorAssignmentId =
 
 export type MirrorPoseRequirement =
   | { kind: 'torso-lean'; direction: MirrorSide; activateAt: number; releaseAt: number }
-  | { kind: 'wrist-position'; side: MirrorSide; targetX: number; targetY: number; toleranceTorso: number }
+  | {
+    kind: 'wrist-region';
+    side: MirrorSide;
+    minOutward: number;
+    maxOutward: number;
+    minBelowShoulder: number;
+    maxBelowShoulder: number;
+  }
   | { kind: 'elbow-angle'; side: MirrorSide; targetDegrees: number; toleranceDegrees: number };
 
 export interface MirrorPoseElement {
@@ -40,11 +47,7 @@ const POSE_ATTEMPT_MS = 5_000;
 const COMBO_DEMO_MS = 2_000;
 const COMBO_ATTEMPT_MS = 4_500;
 const RESULT_MS = 1_000;
-const WRIST_TOLERANCE_TORSO = 0.25;
 const ELBOW_TOLERANCE_DEGREES = 20;
-const HAND_UP_Y = -0.55;
-const HAND_DOWN_Y = 0.8;
-const ARMS_OUT_X = 0.8;
 const NEUTRAL_LANDMARKS = [11, 12, 13, 14, 15, 16, 23, 24] as const;
 const BASE_LANDMARKS = [11, 12, 23, 24] as const;
 const MAX_SAMPLE_GAP_MS = 250;
@@ -55,8 +58,14 @@ function leanRequirement(direction: MirrorSide): MirrorPoseRequirement {
   return { kind: 'torso-lean', direction, activateAt: C.leanActivate, releaseAt: C.leanRelease };
 }
 
-function wristPosition(side: MirrorSide, targetX: number, targetY: number): MirrorPoseRequirement {
-  return { kind: 'wrist-position', side, targetX, targetY, toleranceTorso: WRIST_TOLERANCE_TORSO };
+function wristRegion(
+  side: MirrorSide,
+  minOutward: number,
+  maxOutward: number,
+  minBelowShoulder: number,
+  maxBelowShoulder: number,
+): MirrorPoseRequirement {
+  return { kind: 'wrist-region', side, minOutward, maxOutward, minBelowShoulder, maxBelowShoulder };
 }
 
 function straightElbow(side: MirrorSide): MirrorPoseRequirement {
@@ -69,34 +78,30 @@ function element(action: MirrorAction, name: string, requirements: readonly Mirr
 
 const leanLeft = element('LEFT', 'Lean left', [
   leanRequirement('left'),
-  wristPosition('left', 0, HAND_DOWN_Y),
-  wristPosition('right', 0, HAND_DOWN_Y),
 ]);
 const leanRight = element('RIGHT', 'Lean right', [
   leanRequirement('right'),
-  wristPosition('left', 0, HAND_DOWN_Y),
-  wristPosition('right', 0, HAND_DOWN_Y),
 ]);
 const leftHandUp = element('LEFT_HAND_UP', 'Raise your left hand', [
-  wristPosition('left', 0, HAND_UP_Y),
+  wristRegion('left', -0.15, 0.9, -1.4, -0.3),
   straightElbow('left'),
-  wristPosition('right', 0, HAND_DOWN_Y),
+  wristRegion('right', -0.15, 0.75, 0.15, 1.4),
 ]);
 const rightHandUp = element('RIGHT_HAND_UP', 'Raise your right hand', [
-  wristPosition('right', 0, HAND_UP_Y),
+  wristRegion('right', -0.15, 0.9, -1.4, -0.3),
   straightElbow('right'),
-  wristPosition('left', 0, HAND_DOWN_Y),
+  wristRegion('left', -0.15, 0.75, 0.15, 1.4),
 ]);
 const bothHandsUp = element('BOTH_HANDS_UP', 'Raise both hands', [
-  wristPosition('left', 0, HAND_UP_Y),
+  wristRegion('left', -0.15, 0.9, -1.4, -0.3),
   straightElbow('left'),
-  wristPosition('right', 0, HAND_UP_Y),
+  wristRegion('right', -0.15, 0.9, -1.4, -0.3),
   straightElbow('right'),
 ]);
 const armsOut = element('ARMS_OUT', 'Extend both arms to the sides', [
-  wristPosition('left', ARMS_OUT_X, 0),
+  wristRegion('left', 0.55, 1.4, -0.25, 0.25),
   straightElbow('left'),
-  wristPosition('right', ARMS_OUT_X, 0),
+  wristRegion('right', 0.55, 1.4, -0.25, 0.25),
   straightElbow('right'),
 ]);
 
@@ -241,31 +246,46 @@ function outwardDirection(side: MirrorSide, scale: BodyScale): number {
   return side === 'left' ? anatomicalLeftPointsRight : -anatomicalLeftPointsRight;
 }
 
-function wristCorrection(requirement: Extract<MirrorPoseRequirement, { kind: 'wrist-position' }>, x: number, y: number): string {
-  const xError = Math.abs(x - requirement.targetX);
-  const yError = Math.abs(y - requirement.targetY);
-  if (xError >= yError) {
-    if (requirement.targetX > 0.4) {
-      return x < requirement.targetX
-        ? `Reach your ${requirement.side} arm farther out to the side`
-        : `Bring your ${requirement.side} arm closer in`;
-    }
-    return `Move your ${requirement.side} hand toward your shoulder`;
+function wristRegionCorrection(
+  requirement: Extract<MirrorPoseRequirement, { kind: 'wrist-region' }>,
+  outward: number,
+  belowShoulder: number,
+): { feedback: string; deviation: number } | null {
+  const violations: { feedback: string; deviation: number }[] = [];
+  if (outward < requirement.minOutward) {
+    violations.push({
+      feedback: requirement.minOutward < 0
+        ? `Keep your ${requirement.side} hand on its own side`
+        : `Reach your ${requirement.side} arm farther out to the side`,
+      deviation: requirement.minOutward - outward,
+    });
+  } else if (outward > requirement.maxOutward) {
+    violations.push({
+      feedback: `Bring your ${requirement.side} arm closer in`,
+      deviation: outward - requirement.maxOutward,
+    });
   }
 
-  if (requirement.targetY < 0) {
-    return y > requirement.targetY
-      ? `Raise your ${requirement.side} hand higher`
-      : `Lower your ${requirement.side} hand slightly`;
+  if (belowShoulder < requirement.minBelowShoulder) {
+    violations.push({
+      feedback: requirement.minBelowShoulder < 0
+        ? `Lower your ${requirement.side} hand slightly`
+        : `Lower your ${requirement.side} hand to shoulder height`,
+      deviation: requirement.minBelowShoulder - belowShoulder,
+    });
+  } else if (belowShoulder > requirement.maxBelowShoulder) {
+    violations.push({
+      feedback: requirement.maxBelowShoulder < 0
+        ? `Raise your ${requirement.side} hand higher`
+        : requirement.minBelowShoulder > 0
+          ? `Raise your ${requirement.side} hand slightly`
+          : `Raise your ${requirement.side} hand to shoulder height`,
+      deviation: belowShoulder - requirement.maxBelowShoulder,
+    });
   }
-  if (requirement.targetY > 0) {
-    return y < requirement.targetY
-      ? `Lower your ${requirement.side} hand`
-      : `Raise your ${requirement.side} hand slightly`;
-  }
-  return y < requirement.targetY
-    ? `Lower your ${requirement.side} hand to shoulder height`
-    : `Raise your ${requirement.side} hand to shoulder height`;
+
+  if (violations.length === 0) return null;
+  return violations.reduce((best, current) => current.deviation > best.deviation ? current : best);
 }
 
 function assessRequirement(
@@ -305,15 +325,13 @@ function assessRequirement(
     };
   }
 
-  const x = (wrist.x - shoulder.x) * outwardDirection(requirement.side, scale) / scale.torsoLength;
-  const y = (wrist.y - shoulder.y) / scale.torsoLength;
-  const xError = Math.abs(x - requirement.targetX);
-  const yError = Math.abs(y - requirement.targetY);
-  const largestAxisError = Math.max(xError, yError);
+  const outward = (wrist.x - shoulder.x) * outwardDirection(requirement.side, scale) / scale.torsoLength;
+  const belowShoulder = (wrist.y - shoulder.y) / scale.torsoLength;
+  const correction = wristRegionCorrection(requirement, outward, belowShoulder);
   return {
-    matches: xError <= requirement.toleranceTorso && yError <= requirement.toleranceTorso,
-    deviation: Math.max(0, largestAxisError / requirement.toleranceTorso - 1),
-    feedback: wristCorrection(requirement, x, y),
+    matches: correction === null,
+    deviation: correction?.deviation ?? 0,
+    feedback: correction?.feedback ?? '',
     highlight,
   };
 }

@@ -1,0 +1,11 @@
+# Mirror Challenge: visible speaking coach
+
+User requested and authorized a character standing centrally in front of the player, demonstrating and speaking instructions. Execute with GPT-6 Luna max subagents only; preserve other concurrent edits.
+
+- Central front-facing articulated character demonstrates the exact target used by Mirror scoring. Mirror screen-side mapping: user's left appears screen-left. Six actions: lean left/right, one hand up, both hands up, arms out. Combo demo cycles both elements; attempt follows runtime element and neutral transition.
+- Existing Three.js RunnerWorld owns rendering. Add dedicated MirrorCoachPresentation, use existing model if bone posing can be made reliable; otherwise a polished articulated stylized character with face, torso, limbs is acceptable. Show full body, platform, idle/transition motion; freeze on tracking pause. Hide ordinary running avatar and stop scrolling environment during this mode, restore all previous behavior on exit. Expose observed scene state for browser tests.
+- ModeEngine exports the last MirrorChallengeResult in its snapshot; no scoring changes. A shared presentation mapping chooses demo action from task timing and attempt action from targetId/awaitingNeutral. Public MirrorCoachState feeds both visuals and speech.
+- App supplies optional sixth world.update argument. Add central speech bubble, phase, hold progress and voice toggle. Browser speech synthesis speaks one short English command per phase/target, cancels on pause/exit/replay, and does not queue repeated frames. Graceful text fallback when unsupported. Existing UI language is English.
+- Validate unit mapping/combo/neutral/speech deduplication and renderer pose mapping, existing world tests, full types/build, actual Chrome synthetic-camera flow: central coach visible, distinct poses, score, pause and replay; desktop/mobile screenshots. No public deployment or commits.
+
+Completed: central coach, six poses, runtime mapping, speech controls, hold progress, tutorial preservation and responsive camera. Full checks passed; Chrome completed the 60-second challenge and replay with synthetic poses. Desktop and mobile screenshots visually inspected. Evidence and limitations: `.video-review/mirror-coach-qa.md`.

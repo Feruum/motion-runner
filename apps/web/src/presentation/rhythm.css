@@ -1,0 +1,16 @@
+.rhythm-guide[hidden] { display: none; }
+.rhythm-guide { position: absolute; z-index: 2; left: 50%; bottom: 140px; transform: translateX(-50%); display: flex; align-items: center; justify-content: center; gap: 18px; width: max-content; max-width: calc(100% - 32px); padding: 9px 16px; border: 1px solid #ffe59570; border-radius: 30px; background: #183c35e8; color: #fff8df; font: 600 12px Outfit, sans-serif; pointer-events: none; box-shadow: 0 4px 20px #15352b30; }
+.rhythm-guide b { color: #ffe17b; margin-right: 4px; font-size: 16px; }
+.rhythm-beats { display: flex; gap: 5px; padding-left: 12px; border-left: 1px solid #fff3; }
+.rhythm-beats i { display: block; width: 7px; height: 7px; border-radius: 50%; background: #69877b; }
+.rhythm-beats i.is-beat { background: #ffe17b; box-shadow: 0 0 9px #ffdc7299; }
+body[data-selected-mode='rhythm-run'] .mode-cue { border-color: #ffe17b80; }
+body[data-selected-mode='rhythm-run'] .mode-cue-icon { color: #ffe17b; background: #ffe17b20; font-size: 22px; }
+body[data-selected-mode='rhythm-run'] .mode-cue-score { font-size: 11px; }
+@media (max-width: 540px) {
+  .rhythm-guide { bottom: 144px; gap: 9px; padding: 7px 11px; font-size: 11px; }
+  .rhythm-guide b { font-size: 14px; }
+  .rhythm-beats { display: none; }
+  body[data-selected-mode='rhythm-run'] .mode-cue { min-height: 72px; bottom: 54px; gap: 9px; }
+  body[data-selected-mode='rhythm-run'] .mode-cue-score { max-width: 68px; white-space: normal; text-align: right; line-height: 1.5; font-size: 10px; }
+}

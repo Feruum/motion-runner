@@ -89,6 +89,41 @@ function feed(engine: ModeEngine, landmarks: Landmark[], startMs: number, endMs:
 }
 
 describe('pose-mode ModeEngine integration', () => {
+  it.each(['dance-party', 'dance-duo'] as const)('finalizes every %s cue when the session ends between camera frames', mode => {
+    const engine = new ModeEngine(mode, 60_000);
+    const target = dancePose(DANCE_CUES[0]);
+    const players = mode === 'dance-duo' ? [target, target] : undefined;
+    // The first camera frame arrives after zero; the last is before the session deadline.
+    feed(engine, target, 50, 59_950, players);
+    const before = engine.snapshot(60_000);
+    expect(before.posePhase).not.toBe('complete');
+    engine.finish();
+    const after = engine.snapshot(60_000);
+    expect(after).toMatchObject({
+      score: before.score,
+      playerOneScore: before.playerOneScore,
+      playerTwoScore: before.playerTwoScore,
+      teamScore: before.teamScore,
+      posePhase: 'complete', poseCueIndex: null, trackingRecovery: false,
+      misses: (DANCE_CUES.length - before.cleared) * (mode === 'dance-duo' ? 2 : 1),
+    });
+    engine.finish();
+    feed(engine, target, 60_000, 60_500, players);
+    expect(engine.snapshot(60_500)).toEqual(after);
+    engine.reset();
+    feed(engine, target, 0, 500, players);
+    expect(engine.snapshot(500)).toMatchObject({ cleared: 1, misses: 0, poseCueIndex: 0 });
+  });
+
+  it('finalizes Duo misses independently when only one player completed a cue', () => {
+    const engine = new ModeEngine('dance-duo', 60_000);
+    const target = dancePose(DANCE_CUES[0]);
+    const wrong = dancePose(DANCE_CUES[1]);
+    feed(engine, target, 0, 500, [target, wrong]);
+    engine.finish();
+    expect(engine.snapshot(500)).toMatchObject({ playerOneScore: 100, playerTwoScore: 0, teamScore: 0, misses: 15 });
+  });
+
   it('routes Mirror Challenge through the held-pose runtime and exposes specific corrections', () => {
     const engine = new ModeEngine('mirror-challenge', 60_000);
     const partialPose = mirrorPose(0.024);

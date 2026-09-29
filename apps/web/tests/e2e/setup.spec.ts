@@ -34,7 +34,7 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator('.stage-calibration')).toBeVisible();
 });
 
-test('explains calibration and starts through gestures with visible progress', async ({ page }) => {
+test('explains calibration and starts through gestures with visible progress', async ({ page }, testInfo) => {
   test.setTimeout(115000);
   const setPose = async (lean = 0, arms: Parameters<typeof pose>[2] = 'down') => {
     await page.evaluate(sample => {
@@ -64,6 +64,13 @@ test('explains calibration and starts through gestures with visible progress', a
   const score = Number(await page.locator('.results-metrics strong').first().textContent());
   expect(score).toBeGreaterThan(0);
   expect(await page.evaluate(() => Number(localStorage.getItem('motion-runner-best')))).toBe(score);
+  if (testInfo.config.metadata.liveApi) {
+    await expect(page.locator('#leaderboard-result-status')).toContainText('Run saved to the leaderboard.');
+    const playerId = await page.evaluate(() => localStorage.getItem('motion-runner-player-id'));
+    const response = await page.request.get(`/api/leaderboard?playerId=${playerId}`);
+    expect(response.ok()).toBe(true);
+    expect((await response.json()).personalBest).toMatchObject({ score, isCurrentPlayer: true });
+  }
   await setPose(0, 'up');
   // A deliberate held start gesture, measured in real active time.
   await page.waitForTimeout(1600);

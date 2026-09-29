@@ -226,6 +226,40 @@ describe('private race rooms', () => {
     expect(engines[0].updates.at(-1)?.inputs[playerId]).toEqual({ steer: 0, jump: false, tracking: false });
   });
 
+  it.each(['lobby', 'countdown', 'results'] as const)('silently discards delayed input in %s without affecting the next race', phase => {
+    const { client, advance, engines } = fixture();
+    const host = client();
+    host.send({ type: 'create', name: 'Alice', characterId: 'rogue', fillBots: false });
+    const playerId = welcomeFor(host).playerId;
+    if (phase !== 'lobby') {
+      host.send({ type: 'ready', ready: true });
+      host.send({ type: 'start' });
+    }
+    if (phase === 'results') {
+      advance(3_000);
+      engines[0].finished = true;
+      advance(34);
+    }
+    expect(host.room().phase).toBe(phase);
+    const roomBefore = structuredClone(host.room());
+    host.send({ type: 'input', seq: 100, steer: 1, jump: true, tracking: true });
+    expect(host.last('error')).toBeUndefined();
+    expect(host.room()).toEqual(roomBefore);
+
+    if (phase === 'results') host.send({ type: 'rematch' });
+    if (phase !== 'countdown') {
+      host.send({ type: 'ready', ready: true });
+      host.send({ type: 'start' });
+    }
+    advance(3_000);
+    advance(34);
+    expect(engines.at(-1)?.updates.at(-1)?.inputs[playerId]).toEqual({ steer: 0, jump: false, tracking: false });
+    host.send({ type: 'input', seq: 1, steer: 0.5, jump: false, tracking: true });
+    advance(34);
+    expect(host.last('error')).toBeUndefined();
+    expect(engines.at(-1)?.updates.at(-1)?.inputs[playerId]).toEqual({ steer: 0.5, jump: false, tracking: true });
+  });
+
   it('transfers host on disconnect, expires lobby slots, and marks racing disconnects DNF after grace', () => {
     const { client, manager, advance, engines } = fixture();
     const host = client();

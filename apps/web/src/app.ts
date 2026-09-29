@@ -8,15 +8,21 @@ import { CharacterPicker, getRunnerName } from './presentation/character-picker'
 import { BIOMES, sampleRoute } from './presentation/route';
 import { MusicTransport } from './presentation/music-transport';
 import { classicRunCue } from './presentation/run-cue';
+import { rhythmRunCue } from './presentation/rhythm-cue';
+import './presentation/rhythm.css';
+import { mirrorCoachState } from './presentation/mirror-coach-state';
+import { MirrorCoachVoice } from './presentation/mirror-coach-voice';
+import './presentation/mirror-coach.css';
+import { danceGuideState, dancePresentationCueIndex } from './presentation/dance-guide-state';
+import './presentation/dance.css';
 import { PoseTracker } from './vision/pose-tracker';
 import { PlayerIdentityAdapter } from './vision/player-identity';
 import { loadLeaderboard, submitLeaderboardScore } from './leaderboard';
 
 const BEST_KEY = 'motion-runner-best';
 const root = document.querySelector<HTMLElement>('#app')!;
-const duration = import.meta.env.DEV && new URLSearchParams(location.search).get('dev') === '1'
-  ? C.developmentDurationMs
-  : C.durationMs;
+// Keep complete game rounds in the local UI too: authored challenges need 60 seconds.
+const duration = C.durationMs;
 const developerMode = import.meta.env.DEV && new URLSearchParams(location.search).get('dev') === '1';
 const availableModes = developerMode
   ? GAME_MODES.filter(mode => ['classic-run', 'rhythm-run', 'mirror-challenge', 'dodge-arena', 'six-seven', 'beat-blaster', 'dance-party', 'dance-duo', 'party-race'].includes(mode.id))
@@ -28,6 +34,8 @@ const gesture = new GestureEngine();
 const partnerGesture = new GestureEngine();
 const playerIdentity = new PlayerIdentityAdapter();
 const music = new MusicTransport();
+const mirrorVoice = new MirrorCoachVoice();
+let mirrorVoiceEnabled = true;
 let modeEngine = new ModeEngine(selectedMode, duration);
 const worldCanvas = document.createElement('canvas');
 worldCanvas.id = 'game-world';
@@ -61,7 +69,7 @@ root.innerHTML = `
     </section>
 
     <section class="mode-selector" aria-label="Choose a game mode">
-      <div class="mode-selector-heading"><div><span class="mode-selector-kicker">ONE CAMERA · MANY WAYS TO MOVE</span><h2>Choose your run.</h2></div><span class="mode-selector-note">Every move gets a clear response.</span></div>
+      <div class="mode-selector-heading"><div><span class="mode-selector-kicker">ONE CAMERA · MANY WAYS TO MOVE</span><h2>Choose your game.</h2></div><span class="mode-selector-note">Collect stars, dodge barriers, or race friends.</span></div>
       <div class="mode-grid" id="mode-grid">
         ${availableModes.map(mode => `<button class="mode-card" type="button" data-mode="${mode.id}" aria-pressed="${mode.id === selectedMode}"><span class="mode-card-icon">${mode.icon}</span><span class="mode-card-copy"><b>${mode.title}</b><small>${mode.subtitle}</small></span><span class="mode-card-check">✓</span></button>`).join('')}
       </div>
@@ -72,13 +80,34 @@ root.innerHTML = `
         <canvas id="game-world" aria-label="Three-dimensional runner track"></canvas>
         <div class="scene-vignette" aria-hidden="true"></div>
         <div class="game-topline">
-          <div class="game-wordmark"><span class="runner-glyph">MR</span><span>THE WILD PATH<br><small>THREE WORLDS · ONE RUN</small></span></div>
+          <div class="game-wordmark"><span class="runner-glyph">MR</span><span id="game-wordmark-copy">THE WILD PATH<br><small>THREE WORLDS · ONE RUN</small></span></div>
           <div class="run-hud" aria-label="Game status">
             <div class="hud-chip"><span class="hud-label">TIME</span><strong id="timer">01:00</strong></div>
             <div class="hud-chip score-chip"><span class="hud-label">SCORE</span><strong id="score">000</strong></div>
           </div>
         </div>
         <div class="lane-guide" aria-hidden="true"><span>01</span><i></i><span>02</span><i></i><span>03</span></div>
+        <section class="mirror-dialogue" id="mirror-dialogue" aria-label="Mirror coach" hidden>
+          <div class="mirror-dialogue-top"><span id="mirror-phase">WATCH ME</span><button id="mirror-voice-toggle" type="button" aria-pressed="true" aria-label="Coach voice">Voice on</button></div>
+          <strong id="mirror-command">Lean left</strong><span class="mirror-rule">Copy me like a mirror. Hold for half a second.</span><span class="mirror-rule" id="mirror-hint"></span>
+          <div id="mirror-hold" class="mirror-hold" role="progressbar" aria-label="Hold the matching pose" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
+        </section>
+        <section class="six-seven-guide" id="six-seven-guide" hidden aria-label="Six Seven movement guide"><small>FOLLOW THE DEMO · STAY IN PLACE</small><strong>6 ↑ · 7 ↑</strong><span>Bend your elbows. Palms up.<br>Lift one hand, then the other.</span><b>Two movements = one rep</b></section>
+        <section class="dance-guide" id="dance-guide" data-cue-index="" data-cue-id="" aria-label="Dance Party guide" hidden>
+          <div class="dance-guide-top"><small id="dance-mode-label">DANCE SOLO</small><span id="dance-cue-counter">01 / 08</span></div>
+          <strong id="dance-target" aria-live="polite">Reach left</strong>
+          <p class="dance-guide-rule">Mirror the dancer: left and right follow the screen. Hold for 0.5 seconds. Keep elbows, wrists, hips and feet in frame.</p>
+          <div class="dance-progress" id="dance-progress" role="progressbar" aria-label="Dance poses completed" aria-valuemin="0" aria-valuemax="8" aria-valuenow="0" aria-valuetext="0 of 8 poses completed"><i></i></div>
+          <small class="dance-progress-label" id="dance-progress-label">0 POSES COMPLETED</small>
+          <div class="dance-corrections" id="dance-correction">
+            <p id="dance-solo-correction"></p>
+            <div id="dance-duo-corrections" hidden>
+              <p><b>PLAYER 1</b><span id="dance-player-one-correction"></span></p>
+              <p><b>PLAYER 2</b><span id="dance-player-two-correction"></span></p>
+            </div>
+          </div>
+        </section>
+        <div class="rhythm-guide" id="rhythm-guide" hidden><span><b>★ ↔</b> Low star: lean</span><span><b>★ ↑</b> High star: jump</span><span class="rhythm-beats" aria-hidden="true"><i></i><i></i><i></i><i></i></span></div>
         <div class="mode-cue" id="mode-cue" aria-live="polite"><span class="mode-cue-icon" id="mode-cue-icon">↗</span><span class="mode-cue-copy"><small id="mode-cue-label">CLASSIC RUN</small><strong id="mode-cue-title">Lean to begin.</strong></span><span class="mode-cue-score" id="mode-cue-score"></span></div>
         <div class="game-bottomline">
           <div class="distance-track"><span id="distance-fill"></span></div>
@@ -151,6 +180,7 @@ const cameraMirror = root.querySelector<HTMLElement>('#camera-mirror')!;
 cameraMirror.append(video, skeletonCanvas);
 const overlay = root.querySelector<HTMLElement>('#stage-overlay')!;
 const scoreLabel = root.querySelector<HTMLElement>('#score')!;
+const scoreCaption = root.querySelector<HTMLElement>('.score-chip .hud-label')!;
 const timerLabel = root.querySelector<HTMLElement>('#timer')!;
 const distanceFill = root.querySelector<HTMLElement>('#distance-fill')!;
 const routeName = root.querySelector<HTMLElement>('#route-name')!;
@@ -174,10 +204,43 @@ const modeCueIcon = root.querySelector<HTMLElement>('#mode-cue-icon')!;
 const modeCueLabel = root.querySelector<HTMLElement>('#mode-cue-label')!;
 const modeCueTitle = root.querySelector<HTMLElement>('#mode-cue-title')!;
 const modeCueScore = root.querySelector<HTMLElement>('#mode-cue-score')!;
+const rhythmGuide = root.querySelector<HTMLElement>('#rhythm-guide')!;
+const rhythmBeatDots = rhythmGuide.querySelectorAll('i');
+const mirrorDialogue = root.querySelector<HTMLElement>('#mirror-dialogue')!;
+const mirrorCommand = root.querySelector<HTMLElement>('#mirror-command')!;
+const mirrorPhase = root.querySelector<HTMLElement>('#mirror-phase')!;
+const mirrorHold = root.querySelector<HTMLElement>('#mirror-hold')!;
+const mirrorVoiceToggle = root.querySelector<HTMLButtonElement>('#mirror-voice-toggle')!;
+const danceGuide = root.querySelector<HTMLElement>('#dance-guide')!;
+const danceModeLabel = root.querySelector<HTMLElement>('#dance-mode-label')!;
+const danceCueCounter = root.querySelector<HTMLElement>('#dance-cue-counter')!;
+const danceTarget = root.querySelector<HTMLElement>('#dance-target')!;
+const danceProgress = root.querySelector<HTMLElement>('#dance-progress')!;
+const danceProgressLabel = root.querySelector<HTMLElement>('#dance-progress-label')!;
+const danceSoloCorrection = root.querySelector<HTMLElement>('#dance-solo-correction')!;
+const danceDuoCorrections = root.querySelector<HTMLElement>('#dance-duo-corrections')!;
+const dancePlayerOneCorrection = root.querySelector<HTMLElement>('#dance-player-one-correction')!;
+const dancePlayerTwoCorrection = root.querySelector<HTMLElement>('#dance-player-two-correction')!;
+if (!mirrorVoice.supported) {
+  mirrorVoiceEnabled = false;
+  mirrorVoiceToggle.disabled = true;
+  mirrorVoiceToggle.textContent = 'Text only';
+  mirrorVoiceToggle.setAttribute('aria-pressed','false');
+  mirrorVoiceToggle.title = 'Voice is unavailable in this browser. Follow the coach and written commands.';
+}
+mirrorVoiceToggle.addEventListener('click', () => {
+  mirrorVoiceEnabled = !mirrorVoiceEnabled;
+  mirrorVoice.setEnabled(mirrorVoiceEnabled);
+  mirrorVoiceToggle.setAttribute('aria-pressed', String(mirrorVoiceEnabled));
+  mirrorVoiceToggle.textContent = mirrorVoiceEnabled ? 'Voice on' : 'Voice off';
+});
 
-const durationMinutesLabel = duration === C.developmentDurationMs ? 'DEV RUN' : '60 SEC RUN';
-if (duration !== C.durationMs) devBadge.textContent = durationMinutesLabel;
-function bestKey(mode: GameMode) { return mode === 'classic-run' ? BEST_KEY : `motion-runner-best:v2:${mode}`; }
+if (developerMode) devBadge.textContent = 'DEVELOPMENT · 60 SEC';
+function bestKey(mode: GameMode) {
+  if (mode === 'classic-run') return BEST_KEY;
+  if (mode === 'six-seven') return 'motion-runner-best:v3:six-seven-repetitions';
+  return `motion-runner-best:v2:${mode}`;
+}
 
 function readBest(mode: GameMode) {
   try {
@@ -203,6 +266,21 @@ function refreshModePicker() {
 }
 
 function updateMoveSet() {
+  const wordmarkCopy = selectedMode === 'rhythm-run'
+    ? 'RHYTHM RUN<br><small>COLLECT STARS ON THE BEAT</small>'
+    : selectedMode === 'dance-party'
+      ? 'DANCE PARTY · SOLO<br><small>COPY THE POSE LIKE A MIRROR</small>'
+      : selectedMode === 'dance-duo'
+        ? 'DANCE PARTY · DUO<br><small>ONE SHARED DEMONSTRATOR</small>'
+        : 'THE WILD PATH<br><small>THREE WORLDS · ONE RUN</small>';
+  root.querySelector<HTMLElement>('#game-wordmark-copy')!.innerHTML = wordmarkCopy;
+  const sceneLabel = selectedMode === 'six-seven' ? 'Six Seven: face the character and alternate hand heights'
+    : selectedMode === 'mirror-challenge' ? 'Mirror: copy the character’s pose'
+      : selectedMode === 'rhythm-run' ? 'Rhythm Run: collect low stars by leaning and high stars by jumping'
+        : selectedMode === 'dance-party' ? 'Dance Party Solo: copy the front-facing character and hold each full-body pose'
+          : selectedMode === 'dance-duo' ? 'Dance Party Duo: both players copy the same front-facing full-body pose'
+            : 'Three-dimensional runner track';
+  sceneCanvas.setAttribute('aria-label', sceneLabel);
   const jumpRow = document.querySelector<HTMLElement>('#move-jump');
   if (jumpRow) jumpRow.hidden = selectedMode === 'dodge-arena';
   const moveCopy = (row: string, title: string, detail: string) => {
@@ -211,23 +289,27 @@ function updateMoveSet() {
   };
   const standard = 'Lean into a new lane. Lift both hands to leap. That is all it takes to leave the everyday behind.';
   const descriptions: Partial<Record<GameMode, string>> = {
-    'rhythm-run': 'Read the move cue, then lean or jump on the beat. Clean timing builds your combo.',
-    'mirror-challenge': 'Watch the coach, match the full-body pose, and hold it until the pulse lands.',
+    'rhythm-run': 'Collect the stars coming down the track. Lean into the lane of a low star. Raise both hands to jump for a high star. Catch them at the glowing line to build your combo.',
+    'mirror-challenge': 'Face your coach in the center. Watch the pose, copy it like a mirror, and hold it steady. Your coach shows and says each move.',
     'dodge-arena': 'Read each warning and lean to a clear lane before the obstacle reaches you.',
     'beat-blaster': 'Reach into each glowing target with the matching hand. The camera checks your aim and timing.',
-    'dance-party': 'Copy eight authored full-body dance poses. Hold each one to build your solo score.',
-    'dance-duo': 'Stand side by side. Both players copy each pose; synchronized moves earn a team bonus.',
-    'six-seven': 'Raise one hand, switch sides, then return to the first hand to complete each cycle.',
+    'dance-party': 'Copy the front-facing character like a mirror. Match each full-body pose and hold for 0.5 seconds.',
+    'dance-duo': 'Stand side by side and copy the same front-facing pose like a mirror. Each player keeps an individual score; synchronized holds add a team bonus.',
+    'six-seven': 'Stand in place, bend your elbows and face your palms up. Alternate hand heights near your chest: two movements make one repetition. Start on either side.',
   };
   introDescription.textContent = descriptions[selectedMode] ?? standard;
-  if (selectedMode === 'beat-blaster') {
+  if (selectedMode === 'rhythm-run') {
+    moveCopy('move-left', 'Collect left stars', 'Lean left and stay in their lane');
+    moveCopy('move-right', 'Collect right stars', 'Lean right and stay in their lane');
+    moveCopy('move-jump', 'Catch high stars', 'Return to center, then raise both hands');
+  } else if (selectedMode === 'beat-blaster') {
     moveCopy('move-left', 'Reach left', 'Use your left hand for cyan targets');
     moveCopy('move-right', 'Reach right', 'Use your right hand for coral targets');
     moveCopy('move-jump', 'Follow the target', 'Reach, then return your hand');
   } else if (selectedMode === 'six-seven') {
-    moveCopy('move-left', 'Raise left hand', 'Start the sequence');
-    moveCopy('move-right', 'Raise right hand', 'Switch hands');
-    moveCopy('move-jump', 'Return to left', 'Complete 6 → 7 → 6');
+    moveCopy('move-left', 'Raise one hand', 'Start on either side');
+    moveCopy('move-right', 'Switch hands', 'Two movements = 1 rep');
+    moveCopy('move-jump', 'Repeat the pair', 'Start fresh for the next rep');
   } else if (selectedMode === 'dodge-arena') {
     moveCopy('move-left', 'Lean left', 'Evade the left lane');
     moveCopy('move-right', 'Lean right', 'Evade the right lane');
@@ -236,13 +318,13 @@ function updateMoveSet() {
     moveCopy('move-right', 'Hold the shape', 'Keep it steady for the pulse');
     moveCopy('move-jump', 'Try each task', 'Single poses and short combos');
   } else if (selectedMode === 'dance-party') {
-    moveCopy('move-left', 'Reach and lean', 'Copy the full-body shape');
-    moveCopy('move-right', 'Raise your hands', 'Use the exact side shown');
-    moveCopy('move-jump', 'Step to the beat', 'Hold each pose briefly');
+    moveCopy('move-left', 'Copy the full pose', 'Follow the dancer like a mirror');
+    moveCopy('move-right', 'Match the hands', 'Left and right match your screen');
+    moveCopy('move-jump', 'Hold the pose', '0.5 seconds to score');
   } else if (selectedMode === 'dance-duo') {
-    moveCopy('move-left', 'Player 1', 'Copy the coach’s pose');
-    moveCopy('move-right', 'Player 2', 'Stay visible beside them');
-    moveCopy('move-jump', 'Move together', 'Sync up for team points');
+    moveCopy('move-left', 'Player 1', 'Copy the same pose');
+    moveCopy('move-right', 'Player 2', 'Keep your full body in frame');
+    moveCopy('move-jump', 'Hold together', 'Synchronized moves add a team bonus');
   } else {
     moveCopy('move-left', 'Lean left', 'Change to left lane');
     moveCopy('move-right', 'Lean right', 'Change to right lane');
@@ -257,6 +339,7 @@ function selectMode(mode: GameMode) {
     location.assign(route.href); return;
   }
   selectedMode = mode;
+  world?.setDanceMode(mode === 'dance-party' || mode === 'dance-duo');
   session.setTutorialMode(mode);
   playerIdentity.reset();
   partnerGesture.reset();
@@ -298,7 +381,7 @@ let previousUiKey = '';
 let previousScore = -1;
 let previousLane = 0;
 let setupError = '';
-let setupFailure: 'camera' | 'model' = 'camera';
+let setupFailure: 'camera' | 'model' | 'tracking' = 'camera';
 let assetMessage = 'Loading the landscape';
 let previousCleared = 0;
 let previousCollisions = 0;
@@ -436,6 +519,7 @@ try {
     document.body.dataset.runnerAssets = message;
     document.body.dataset.runnerAnimations = animations.join(',');
   });
+  world.setDanceMode(selectedMode === 'dance-party' || selectedMode === 'dance-duo');
 } catch (error) {
   console.error('The 3D graphics context could not start.', error);
   cameraStatus.innerHTML = '<span class="status-dot status-warning"></span><span>3D GRAPHICS UNAVAILABLE</span>';
@@ -462,6 +546,7 @@ function stopModeMusic() {
 }
 
 function startModeMusic() {
+  if (selectedMode === 'mirror-challenge') return;
   if (!GAME_MODES.find(mode => mode.id === selectedMode)?.music || !audio) return;
   const token = ++musicStartToken;
   const start = () => {
@@ -533,10 +618,16 @@ async function beginSetup() {
   tracker = new PoseTracker(video, sample => {
     handlePoseSample(sample);
   }, message => {
-    setupFailure = 'model';
+    setupFailure = 'tracking';
     setupError = message;
     session.cameraFailed();
     tracker?.stop();
+    latestAnalysis = null;
+    latestSample = null;
+    partnerAnalysis = null;
+    duoPlayersReady = false;
+    duoVisiblePlayers = 0;
+    cameraEmpty.hidden = false;
     cameraView.classList.remove('camera-live');
     updateUI(performance.now(), true);
   }, selectedMode === 'dance-duo' ? 2 : 1);
@@ -616,9 +707,9 @@ function transitionCopy(stage: Stage, now: number) {
     };
     const sixSeven = selectedMode === 'six-seven';
     const blasterTarget = selectedMode === 'beat-blaster' ? session.tutorialTarget : null;
-    const titles = sixSeven ? ['Raise your left hand.', 'Now raise your right hand.'] : ['Lean into the left lane.', 'Now find the right lane.', 'Lift off with both hands.'];
+    const titles = sixSeven ? ['Lift your left hand higher.', 'Now lift your right hand higher.'] : ['Lean into the left lane.', 'Now find the right lane.', 'Lift off with both hands.'];
     const copies = sixSeven
-      ? ['Raise your left hand above your head while keeping the other hand down.', 'Switch hands. Raise your right hand above your head while keeping the other down.']
+      ? ['Bend your elbows with palms up. Lift your left hand higher than your right, between waist and chest.', 'Switch their heights: right hand higher, left hand lower. Keep both hands in view.']
       : [
         'Move your shoulders a little to your left. Follow the cue in your camera preview.',
         'Shift back through center, then lean your shoulders to the right.',
@@ -638,8 +729,10 @@ function transitionCopy(stage: Stage, now: number) {
   if (stage === 'READY') return {
     kicker: 'ALL SET · HOLD TO START',
     title: session.startArmed ? 'Great. Hands down.' : 'Raise both hands.',
-    copy: startInstruction(now),
-    action: '', foot: session.startArmed ? 'LOWER HANDS TO COUNT IN' : `${startHoldPercent(now)}% · HOLD BOTH HANDS HIGH`, icon: '↑', actionId: '',
+    copy: selectedMode === 'six-seven' ? `${startInstruction(now)} Or lower both hands and press Start game.` : startInstruction(now),
+    action: selectedMode === 'six-seven' ? 'Start game' : '',
+    foot: session.startArmed ? 'LOWER HANDS TO COUNT IN' : selectedMode === 'six-seven' ? '2 HAND MOVEMENTS = 1 REP · START ON EITHER SIDE' : `${startHoldPercent(now)}% · HOLD BOTH HANDS HIGH`,
+    icon: '↑', actionId: selectedMode === 'six-seven' ? 'start-run' : '',
   };
   if (stage === 'COUNTDOWN') {
     const count = Math.max(1, Math.ceil((session.countdownEndsAt - now) / 1000));
@@ -648,19 +741,19 @@ function transitionCopy(stage: Stage, now: number) {
   if (stage === 'PAUSED') return {
     kicker: 'TRACKING PAUSED', title: 'Let’s get you back.',
     copy: trackingInstruction(now),
-    action: '', foot: 'SCORE + COURSE PAUSED', icon: '⌑', actionId: '',
+    action: '', foot: selectedMode === 'six-seven' ? 'REPS SAVED · CHALLENGE PAUSED' : 'SCORE + COURSE PAUSED', icon: '⌑', actionId: '',
   };
   if (stage === 'RESULTS' && selectedMode === 'rhythm-run') return {
     kicker: `RHYTHM COMPLETE · PERSONAL BEST ${session.bestScore}`,
-    title: 'You found the beat.',
-    copy: `You hit ${runCleared()} cues and missed ${runMisses()}.`,
-    action: 'Run again', foot: `SCORE ${runScore()} · BEST ${session.bestScore}`, icon: '♫', actionId: 'replay-run',
+    title: 'Your star collection.',
+    copy: `You collected ${runCleared()} stars and missed ${runMisses()}. Lean for low stars and jump for high ones.`,
+    action: 'Run again', foot: `SCORE ${runScore()} · BEST ${session.bestScore}`, icon: '★', actionId: 'replay-run',
   };
   if (stage === 'RESULTS' && selectedMode === 'six-seven') return {
-    kicker: `SEQUENCE COMPLETE · PERSONAL BEST ${session.bestScore}`,
-    title: 'You closed the loop.',
-    copy: `You completed ${runCleared()} full 6 → 7 → 6 cycles.`,
-    action: 'Run again', foot: `SCORE ${runScore()} · BEST STREAK ${modeEngine.snapshot(session.game.elapsedMs).bestCombo}`, icon: '67', actionId: 'replay-run',
+    kicker: `CHALLENGE COMPLETE · PERSONAL BEST ${session.bestScore} REPS`,
+    title: 'Your repetition count.',
+    copy: `You completed ${runScore()} repetitions. Keep your elbows bent and alternate hand heights. Each fresh pair counts once.`,
+    action: 'Try again', foot: `REPS ${runScore()} · PERSONAL BEST ${session.bestScore}`, icon: '67', actionId: 'replay-run',
   };
   if (stage === 'RESULTS' && selectedMode === 'beat-blaster') return {
     kicker: `BLASTER COMPLETE · PERSONAL BEST ${session.bestScore}`,
@@ -670,7 +763,7 @@ function transitionCopy(stage: Stage, now: number) {
   };
   if (stage === 'RESULTS' && selectedMode === 'mirror-challenge') return {
     kicker: `MIRROR COMPLETE · PERSONAL BEST ${session.bestScore}`,
-    title: 'You matched the coach.',
+    title: runCleared() > 0 ? 'You matched the coach.' : 'Let’s practise the poses.',
     copy: `You held ${runCleared()} of ${modeEngine.snapshot(session.game.elapsedMs).poseCueCount} poses and missed ${runMisses()}.`,
     action: 'Run again', foot: `SCORE ${runScore()} · BEST STREAK ${modeEngine.snapshot(session.game.elapsedMs).bestCombo}`, icon: '◉', actionId: 'replay-run',
   };
@@ -696,10 +789,10 @@ function transitionCopy(stage: Stage, now: number) {
     action: 'Run again', foot: `SCORE ${runScore()} · PERSONAL BEST ${session.bestScore}`, icon: '✦', actionId: 'replay-run',
   };
   if (stage === 'ERROR') return {
-    kicker: setupFailure === 'model' ? 'POSE MODEL SETUP' : 'CAMERA SETUP',
-    title: setupFailure === 'model' ? 'The pose tracker did not load.' : 'We could not get you on course.',
+    kicker: setupFailure === 'tracking' ? 'CAMERA INTERRUPTED' : setupFailure === 'model' ? 'POSE MODEL SETUP' : 'CAMERA SETUP',
+    title: setupFailure === 'tracking' ? 'Camera tracking stopped.' : setupFailure === 'model' ? 'The pose tracker did not load.' : 'We could not get you on course.',
     copy: setupError || 'Check camera permissions, close other camera apps, then try again.',
-    action: 'Try again', foot: 'YOUR CAMERA IMAGE STAYS ON THIS DEVICE', icon: '!', actionId: 'retry-camera',
+    action: 'Try again', foot: setupFailure === 'tracking' ? 'RETRY STARTS CAMERA SETUP AGAIN' : 'YOUR CAMERA IMAGE STAYS ON THIS DEVICE', icon: '!', actionId: 'retry-camera',
   };
   return { kicker: '', title: '', copy: '', action: '', foot: '', icon: '', actionId: '' };
 }
@@ -718,11 +811,11 @@ function renderResultsMetrics() {
       : selectedMode === 'dance-party'
         ? [[runScore(), 'SCORE'], [runCleared(), 'POSES HIT'], [runMisses(), 'MISSED CUES'], [session.bestScore, 'PERSONAL BEST']]
         : selectedMode === 'rhythm-run'
-          ? [[runScore(), 'SCORE'], [runCleared(), 'CUES HIT'], [runMisses(), 'MISSES'], [session.bestScore, 'PERSONAL BEST']]
+          ? [[runScore(), 'SCORE'], [runCleared(), 'STARS CAUGHT'], [runMisses(), 'MISSED STARS'], [session.bestScore, 'PERSONAL BEST']]
           : selectedMode === 'beat-blaster'
             ? [[runScore(), 'SCORE'], [runCleared(), 'TARGETS HIT'], [snapshot.misses, 'MISSES'], [session.bestScore, 'PERSONAL BEST']]
             : selectedMode === 'six-seven'
-              ? [[runScore(), 'SCORE'], [runCleared(), 'FULL CYCLES'], [snapshot.bestCombo, 'BEST STREAK'], [session.bestScore, 'PERSONAL BEST']]
+              ? [[runScore(), 'REPETITIONS'], [session.bestScore, 'PERSONAL BEST']]
               : selectedMode === 'dodge-arena'
                 ? [[runScore(), 'SCORE'], [runCleared(), 'WAVES CLEARED'], [snapshot.collisions, 'COLLISIONS'], [session.bestScore, 'PERSONAL BEST']]
                 : [[runScore(), 'SCORE'], [runCleared(), 'WAVES CLEARED'], [runMisses(), 'COLLISIONS'], [session.bestScore, 'PERSONAL BEST']];
@@ -767,6 +860,7 @@ function startInstruction(now: number) {
   if (!hasFreshBody(now)) return trackingInstruction(now);
   if (!latestAnalysis?.handsTracked) return latestAnalysis?.correction?.text ?? 'Keep both hands inside the camera frame.';
   if (session.startArmed) return 'Gesture accepted. Lower both hands to start.';
+  if (!latestAnalysis.handsUp && latestAnalysis.correction) return latestAnalysis.correction.text;
   return `Raise both hands and hold for one second · ${startHoldPercent(now)}%`;
 }
 
@@ -806,12 +900,19 @@ function renderOverlay(now: number) {
       ${stage === 'CALIBRATION' ? `<div class="calibration-track"><i style="width:${progress}%"></i></div>` : ''}
       ${stage === 'RESULTS' ? `<p class="replay-instruction">${startInstruction(now)}</p>` : ''}
       ${stage === 'READY' || stage === 'RESULTS' ? `<div class="hold-track" role="progressbar" aria-label="Hold both hands to start" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${holdPercent}"><i style="width:${holdPercent}%"></i></div>` : ''}
-      ${copy.action ? `<button class="primary-action" id="${copy.actionId}"><span>${copy.action}</span><span class="action-arrow">↗</span></button>` : ''}
+      ${copy.action ? `<button class="primary-action" id="${copy.actionId}"><span>${copy.action}</span><span class="action-arrow" aria-hidden="true">↗</span></button>` : ''}
       <span class="overlay-foot">${copy.foot}</span>
     </div>`;
   if (stage === 'WELCOME') overlay.querySelector('#enable-camera')?.before(characterPicker.element);
   overlay.querySelector<HTMLButtonElement>('#enable-camera')?.addEventListener('click', () => void beginSetup());
   overlay.querySelector<HTMLButtonElement>('#retry-camera')?.addEventListener('click', () => void beginSetup());
+  overlay.querySelector<HTMLButtonElement>('#start-run')?.addEventListener('click', () => {
+    const now = performance.now();
+    if (latestAnalysis && session.requestStart(now, latestAnalysis)) {
+      syncModeStage('READY');
+      updateUI(now, true);
+    }
+  });
   overlay.querySelector<HTMLButtonElement>('#replay-run')?.addEventListener('click', () => {
     const now = performance.now();
     if (latestAnalysis && session.requestReplay(now, latestAnalysis)) {
@@ -847,15 +948,15 @@ function setPipeline(analysis: GestureAnalysis | null) {
       coachCount.textContent = `${cueNumber} / ${poseSnapshot.poseCueCount} POSES · ${poseSnapshot.combo} STREAK`;
       coachCopy.textContent = poseSnapshot.feedback || (poseSnapshot.poseCueName ? `Copy “${poseSnapshot.poseCueName}”, then hold it steady.` : 'Follow the next full-body pose.');
     } else {
-      coachCount.textContent = selectedMode === 'six-seven' ? `${modeEngine.sixSevenCount} FULL CYCLES` : 'LIVE · YOU ARE IN CONTROL';
+      coachCount.textContent = selectedMode === 'six-seven' ? `${modeEngine.sixSevenCount} REPS` : 'LIVE · YOU ARE IN CONTROL';
       coachCopy.textContent = selectedMode === 'rhythm-run'
-      ? modeEngine.snapshot(session.game.elapsedMs).feedback || 'Watch the cue and move with the beat. Return to neutral between matching moves.'
+      ? modeEngine.snapshot(session.game.elapsedMs).feedback || 'Collect low stars in their lane. Jump for the high stars at the glowing line.'
       : selectedMode === 'beat-blaster'
         ? modeEngine.snapshot(session.game.elapsedMs).feedback || 'Reach with the matching hand, then return your hand to neutral.'
       : selectedMode === 'dodge-arena'
         ? modeEngine.feedback || 'Watch the warning and lean into a clear lane.'
       : selectedMode === 'six-seven'
-        ? modeEngine.feedback || 'Raise one hand, switch hands, then raise the first again.'
+        ? modeEngine.feedback || 'Raise one hand, switch to the other, then start a fresh pair for one more rep.'
         : 'Lean to choose your lane. Raise both hands to jump.';
     }
   } else if (session.stage === 'PAUSED') {
@@ -883,10 +984,36 @@ function cueTitle(move: string) {
 }
 
 function updateModeHud() {
-  modeCue.hidden = session.stage !== 'PLAYING' || !!latestAnalysis?.correction;
+  root.querySelector<HTMLElement>('#six-seven-guide')!.hidden = selectedMode !== 'six-seven' || session.stage !== 'PLAYING';
+  updateDanceGuide();
+  const mirrorState = selectedMode === 'mirror-challenge' ? mirrorCoachState(modeEngine.snapshot(session.game.elapsedMs).mirror, session.game.elapsedMs) : null;
+  mirrorDialogue.hidden = !mirrorState || session.stage !== 'PLAYING';
+  if (mirrorState) {
+    mirrorCommand.textContent = mirrorState.instruction;
+    root.querySelector<HTMLElement>('#mirror-hint')!.textContent = mirrorState.hint ?? '';
+    mirrorPhase.textContent = mirrorState.successful ? 'NICE MATCH!' : mirrorState.phase === 'demo' ? 'WATCH ME' : mirrorState.phase === 'attempt' ? (mirrorState.awaitingNeutral ? 'RESET TOGETHER' : 'YOUR TURN · HOLD THE POSE') : 'NEXT MOVE COMING';
+    mirrorDialogue.dataset.phase = mirrorState.phase;
+    const progress = mirrorState.successful ? 100 : Math.min(100,Math.round(mirrorState.holdingMs / (mirrorState.awaitingNeutral ? 200 : 500) * 100));
+    mirrorHold.setAttribute('aria-valuenow',String(progress));
+    mirrorHold.querySelector<HTMLElement>('i')!.style.width = `${progress}%`;
+  }
+  rhythmGuide.hidden = selectedMode !== 'rhythm-run' || session.stage !== 'PLAYING';
+  const isDanceMode = selectedMode === 'dance-party' || selectedMode === 'dance-duo';
+  modeCue.hidden = isDanceMode || session.stage !== 'PLAYING' || (!['rhythm-run', 'six-seven', 'mirror-challenge'].includes(selectedMode) && !!latestAnalysis?.correction);
   const definition = availableModes.find(mode => mode.id === selectedMode)!;
   modeCue.dataset.mode = selectedMode;
   modeCueLabel.textContent = definition.title.toUpperCase();
+  if (selectedMode === 'rhythm-run' && modeEngine.rhythm) {
+    const state = modeEngine.rhythm.snapshot(session.game.elapsedMs);
+    const cue = rhythmRunCue(state, session.game.lane, latestAnalysis?.handsDown ?? false, session.game.jumpHeight, latestAnalysis?.handsUp ?? false);
+    modeCueIcon.textContent = cue.icon;
+    modeCueTitle.textContent = cue.title;
+    modeCueLabel.textContent = cue.label;
+    modeCue.dataset.tone = cue.tone;
+    modeCueScore.textContent = `★ ${state.cleared} / ${state.stars.length}${state.combo > 1 ? ` · ${state.combo}×` : ''}`;
+    rhythmBeatDots.forEach((dot, index) => dot.classList.toggle('is-beat', index === Math.floor(state.elapsedMs / 500) % 4));
+    return;
+  }
   if (selectedMode === 'classic-run') {
     const cue = classicRunCue(session.game, latestAnalysis?.handsDown ?? false);
     const hit = session.game.elapsedMs < collisionFeedbackUntil;
@@ -902,9 +1029,9 @@ function updateModeHud() {
   if (selectedMode === 'six-seven') {
     modeCueIcon.textContent = snapshot.feedbackKind === 'good' ? '✓' : '67';
     modeCueTitle.textContent = session.stage === 'PLAYING'
-      ? snapshot.feedback || 'Raise one hand, switch hands, then return to the first.'
-      : 'Raise one hand · switch · return to the first';
-    modeCueScore.textContent = `${snapshot.cleared} CYCLES · ${snapshot.combo} STREAK`;
+      ? snapshot.feedback || 'Palms up. Lift one hand, then switch their heights.'
+      : 'Raise one hand · switch hands · one rep';
+    modeCueScore.textContent = `${snapshot.cleared} REP${snapshot.cleared === 1 ? '' : 'S'}`;
     return;
   }
   if (selectedMode === 'dodge-arena') {
@@ -960,6 +1087,32 @@ function updateModeHud() {
     ? snapshot.feedback
     : cue ? `${snapshot.activeCue ? 'MOVE NOW · ' : 'GET READY · '}${cueTitle(cue.move)}` : 'Level complete';
   modeCueScore.textContent = snapshot.combo > 1 ? `${snapshot.combo}× COMBO` : `${snapshot.cleared} / ${modeEngine.chart.length}`;
+}
+
+function updateDanceGuide() {
+  const isDanceMode = selectedMode === 'dance-party' || selectedMode === 'dance-duo';
+  danceGuide.hidden = !isDanceMode || (session.stage !== 'PLAYING' && session.stage !== 'PAUSED');
+  if (!isDanceMode) return;
+
+  const snapshot = modeEngine.snapshot(session.game.elapsedMs);
+  const state = danceGuideState(snapshot, selectedMode === 'dance-duo' ? 'dance-duo' : 'dance-party');
+  danceModeLabel.textContent = state.isDuo ? 'DANCE PARTY · DUO' : 'DANCE PARTY · SOLO';
+  danceGuide.dataset.cueIndex = state.cueIndex === null ? '' : String(state.cueIndex);
+  danceGuide.dataset.cueId = state.cueId ?? '';
+  danceTarget.dataset.cueIndex = danceGuide.dataset.cueIndex;
+  danceTarget.dataset.cueId = danceGuide.dataset.cueId;
+  danceTarget.textContent = state.targetInstruction;
+  danceCueCounter.textContent = state.cueCounter;
+  danceProgress.setAttribute('aria-valuemax', String(state.poseCount));
+  danceProgress.setAttribute('aria-valuenow', String(state.completedCueCount));
+  danceProgress.setAttribute('aria-valuetext', `${state.completedCueCount} of ${state.poseCount} poses completed`);
+  danceProgress.querySelector<HTMLElement>('i')!.style.width = `${state.progressPercent}%`;
+  danceProgressLabel.textContent = `${state.completedCueCount} ${state.completedCueCount === 1 ? 'POSE' : 'POSES'} COMPLETED`;
+  danceSoloCorrection.hidden = state.isDuo;
+  danceDuoCorrections.hidden = !state.isDuo;
+  danceSoloCorrection.textContent = state.feedback;
+  dancePlayerOneCorrection.textContent = state.playerOneFeedback;
+  dancePlayerTwoCorrection.textContent = state.playerTwoFeedback;
 }
 
 function drawSkeleton(analysis: GestureAnalysis | null) {
@@ -1070,7 +1223,8 @@ function updateUI(now: number, force = false) {
     const remaining = Math.max(0, duration - session.game.elapsedMs);
     const seconds = Math.ceil(remaining / 1000);
     timerLabel.textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
-    const score = String(runScore()).padStart(3, '0');
+    scoreCaption.textContent = selectedMode === 'six-seven' ? 'REPS' : 'SCORE';
+    const score = selectedMode === 'six-seven' ? String(runScore()) : String(runScore()).padStart(3, '0');
     scoreLabel.textContent = score;
     distanceFill.style.transform = `scaleX(${duration > 0 ? session.game.elapsedMs / duration : 0})`;
     const chapter = sampleRoute(session.game.elapsedMs, duration).chapter;
@@ -1084,7 +1238,9 @@ function updateUI(now: number, force = false) {
     const correctionText = isPoseMode && modeFeedback?.feedbackKind === 'hint'
       ? modeFeedback.feedback
       : latestAnalysis?.correction?.text;
-    if (latestAnalysis && now - latestAnalysis.timestampMs <= C.staleMs && correctionText && (session.stage === 'TUTORIAL' || session.stage === 'PLAYING')) {
+    const danceGuideOwnsCorrections = (selectedMode === 'dance-party' || selectedMode === 'dance-duo')
+      && (session.stage === 'PLAYING' || session.stage === 'PAUSED');
+    if (!danceGuideOwnsCorrections && latestAnalysis && now - latestAnalysis.timestampMs <= C.staleMs && correctionText && (session.stage === 'TUTORIAL' || session.stage === 'PLAYING')) {
       toastText.textContent = correctionText;
       toast.hidden = false;
       toast.classList.add('is-visible');
@@ -1096,6 +1252,8 @@ function updateUI(now: number, force = false) {
     updateModeHud();
     const replayButton = overlay.querySelector<HTMLButtonElement>('#replay-run');
     if (replayButton) replayButton.disabled = !hasFreshBody(now);
+    const startButton = overlay.querySelector<HTMLButtonElement>('#start-run');
+    if (startButton) startButton.disabled = !hasFreshBody(now) || !latestAnalysis?.calibrated || !latestAnalysis.handsTracked || !latestAnalysis.handsDown;
     refreshModePicker();
     if (selectedMode === 'dance-duo' && session.stage !== 'WELCOME' && session.stage !== 'ERROR' && session.stage !== 'LOADING') {
       cameraStatus.dataset.playerCount = String(duoVisiblePlayers);
@@ -1129,11 +1287,12 @@ function onPoseTick(now: number) {
   if (stageBefore === 'PLAYING' && selectedMode !== 'classic-run' && selectedMode !== 'party-race') {
     const frameElapsedMs = session.game.elapsedMs - Math.max(0, now - latestAnalysis.timestampMs);
     const events = modeEngine.update(
-      frameElapsedMs,
+      selectedMode === 'rhythm-run' ? session.game.elapsedMs : frameElapsedMs,
       latestAnalysis,
       null,
       selectedMode === 'beat-blaster' ? makeBeatBlasterInput(latestSample) : undefined,
       selectedMode === 'mirror-challenge' || selectedMode === 'dance-party' || selectedMode === 'dance-duo' ? latestSample ?? undefined : undefined,
+      selectedMode === 'rhythm-run' ? { lane:session.game.lane,jumpHeight:session.game.jumpHeight,trackingValid:latestAnalysis.trackingValid } : undefined,
     );
     if (events.includes('clear')) playCue('clear');
   }
@@ -1142,14 +1301,17 @@ function onPoseTick(now: number) {
     activeRunId++;
     leaderboardSubmissionMessage = '';
   }
-  if (stageBefore !== session.stage && session.stage === 'RESULTS') void submitCompletedRun();
+  if (stageBefore !== session.stage && session.stage === 'RESULTS') {
+    modeEngine.finish();
+    void submitCompletedRun();
+  }
   playGameCues();
   if (session.stage === 'RESULTS') persistPersonalBest();
   setPipeline(latestAnalysis);
 }
 
 function handlePoseSample(sample: PoseSample) {
-  const expected = session.stage === 'TUTORIAL' ? session.tutorialTarget : undefined;
+  const expected = session.stage === 'TUTORIAL' && selectedMode !== 'six-seven' ? session.tutorialTarget : undefined;
   let sessionSample = sample;
   if (selectedMode === 'dance-duo') {
     const detections = sample.players ?? (sample.landmarks.length > 0 ? [sample.landmarks] : []);
@@ -1197,6 +1359,13 @@ function handlePoseSample(sample: PoseSample) {
       };
     }
   }
+  // Six Seven requires one raised hand. Generic jump coaching would request the
+  // opposite hand too and hide this mode's own next-step cue during a valid move.
+  if ((selectedMode === 'six-seven' && ['TUTORIAL', 'PLAYING'].includes(session.stage)
+    || selectedMode === 'mirror-challenge' && session.stage === 'PLAYING')
+    && analysis.correction && ['left-hand', 'right-hand', 'both-hands', 'lean-left', 'lean-right'].includes(analysis.correction.code)) {
+    analysis = { ...analysis, correction: null };
+  }
   latestAnalysis = analysis;
   const now = performance.now();
   onPoseTick(now);
@@ -1231,12 +1400,22 @@ function loop(now: number) {
       activeRunId++;
       leaderboardSubmissionMessage = '';
     }
-    if (stageBefore !== session.stage && session.stage === 'RESULTS') void submitCompletedRun();
+    if (stageBefore !== session.stage && session.stage === 'RESULTS') {
+      modeEngine.finish();
+      void submitCompletedRun();
+    }
     playGameCues();
     if (session.stage === 'RESULTS') persistPersonalBest();
   }
   const previewPose = latestAnalysis && now - latestAnalysis.timestampMs <= C.staleMs ? latestAnalysis : undefined;
-  world?.update(session.stage, session.game, dt, previewPose);
+  const mirrorState = selectedMode === 'mirror-challenge' ? mirrorCoachState(modeEngine.snapshot(session.game.elapsedMs).mirror, session.game.elapsedMs) : undefined;
+  mirrorVoice.update(mirrorState ?? null, session.stage === 'PLAYING' && !session.game.paused && !document.hidden);
+  const danceCueIndex = selectedMode === 'dance-party' || selectedMode === 'dance-duo'
+    ? dancePresentationCueIndex(session.stage, modeEngine.snapshot(session.game.elapsedMs).poseCueIndex)
+    : undefined;
+  world?.update(session.stage, session.game, dt, previewPose, modeEngine.rhythm?.snapshot(session.game.elapsedMs), mirrorState,
+    selectedMode === 'six-seven' ? { elapsedMs: session.game.elapsedMs, count: modeEngine.sixSevenCount } : undefined,
+    danceCueIndex);
   updateUI(now);
   requestAnimationFrame(loop);
 }
@@ -1244,10 +1423,11 @@ function loop(now: number) {
 window.addEventListener('visibilitychange', () => {
   const previousStage = session.stage;
   session.setTabHidden(document.visibilityState === 'hidden');
+  if (document.hidden) mirrorVoice.update(null, false);
   syncModeStage(previousStage);
   updateUI(performance.now(), true);
 });
-window.addEventListener('beforeunload', () => { tracker?.stop(); world?.dispose(); audio?.close(); });
+window.addEventListener('beforeunload', () => { tracker?.stop(); world?.dispose(); mirrorVoice.dispose(); audio?.close(); });
 window.addEventListener('resize', () => drawSkeleton(latestAnalysis));
 void refreshLeaderboard();
 requestAnimationFrame(loop);

@@ -9,6 +9,10 @@ import { CHARACTERS } from './characters';
 import type { CharacterId } from './characters';
 import { JourneyEnvironment } from './environment';
 import { wrapSceneryZ } from './route';
+import { RhythmStarsPresentation } from './rhythm-stars';
+import type { RhythmSnapshot } from '../../../../packages/game/src/core/rhythm-types';
+import { MirrorCoachPresentation } from './mirror-coach';
+import type { MirrorCoachState } from './mirror-coach-state';
 
 const laneX = [-2.75, 0, 2.75];
 const trackTileLength = 5.2;
@@ -29,6 +33,8 @@ export class RunnerWorld {
   private readonly floor = new THREE.Group();
   private readonly moving = new THREE.Group();
   private readonly actor = new THREE.Group();
+  private readonly rhythmStars = new RhythmStarsPresentation();
+  private readonly mirrorCoach = new MirrorCoachPresentation();
   private readonly tiles: THREE.Object3D[] = [];
   private readonly obstacleGroups = new Map<number, THREE.Group>();
   private readonly actions = new Map<string, THREE.AnimationAction>();
@@ -59,6 +65,9 @@ export class RunnerWorld {
   private reactionUntilMs = -Infinity;
   private elapsedMs = 0;
   private targetX = 0;
+  private cameraCoachMix = 0;
+  private danceModeSelected = false;
+  private dancePresentationActive = false;
   private destroyed = false;
   private lastSuccessCount = 0;
   private lastHitCount = 0;
@@ -86,7 +95,7 @@ export class RunnerWorld {
     this.scene.background = new THREE.Color(0x20333c);
     this.scene.fog = new THREE.Fog(0x20333c, 25, 60);
     this.scene.add(this.root);
-    this.root.add(this.floor, this.moving, this.actor, this.particleBatch);
+    this.root.add(this.floor, this.moving, this.actor, this.particleBatch, this.rhythmStars.group, this.mirrorCoach.group);
     this.environment = new JourneyEnvironment(this.scene, canvas);
     this.buildTrackFallback();
     this.buildParticles();
@@ -99,10 +108,47 @@ export class RunnerWorld {
     this.render();
   }
 
-  update(stage: Stage, game: GameEngine, frameDeltaMs: number, pose?: GestureAnalysis): void {
+  update(
+    stage: Stage,
+    game: GameEngine,
+    frameDeltaMs: number,
+    pose?: GestureAnalysis,
+    rhythm?: RhythmSnapshot,
+    mirrorCoachState?: MirrorCoachState,
+    sixSevenPresentation?: { elapsedMs: number; count: number },
+    danceCueIndex?: number | null,
+  ): void {
     if (this.destroyed) return;
+    const mirrorMode = mirrorCoachState !== undefined
+      && (stage === 'COUNTDOWN' || stage === 'PLAYING' || stage === 'PAUSED' || stage === 'RESULTS');
+    const sixSevenMode = sixSevenPresentation !== undefined
+      && (stage === 'COUNTDOWN' || stage === 'PLAYING' || stage === 'PAUSED' || stage === 'RESULTS');
+    const danceMode = this.danceModeSelected
+      && (stage === 'COUNTDOWN' || stage === 'PLAYING' || stage === 'PAUSED' || stage === 'RESULTS');
+    if (danceMode !== this.dancePresentationActive) {
+      this.dancePresentationActive = danceMode;
+      this.mirrorCoach.setDanceMode(danceMode);
+    }
+    const presenterMode = mirrorMode || sixSevenMode || danceMode;
+    const visibleMirrorState = mirrorMode
+      ? stage === 'COUNTDOWN'
+        ? { ...mirrorCoachState, action: 'NEUTRAL' as const, awaitingNeutral: true }
+        : mirrorCoachState
+      : null;
+    const visibleCoachAction = visibleMirrorState && !visibleMirrorState.awaitingNeutral && visibleMirrorState.phase !== 'complete'
+      ? visibleMirrorState.action
+      : mirrorMode ? 'NEUTRAL' : '';
+    this.actor.visible = !presenterMode;
+    this.canvas.dataset.mirrorCoachVisible = String(mirrorMode);
+    this.canvas.dataset.mirrorCoachAction = visibleCoachAction;
+    this.canvas.dataset.mirrorCoachPhase = visibleMirrorState?.phase ?? '';
+    this.canvas.dataset.sixSevenVisible = String(sixSevenMode);
+    this.canvas.dataset.sixSevenCount = sixSevenMode ? String(sixSevenPresentation.count) : '';
+    this.canvas.dataset.danceVisible = String(danceMode);
+    this.canvas.dataset.danceCueIndex = danceMode && danceCueIndex !== null && danceCueIndex !== undefined ? String(danceCueIndex) : '';
     if (this.character) this.character.rotation.y = stage === 'WELCOME' || stage === 'RESULTS' ? 0 : Math.PI;
     if (game.elapsedMs < this.elapsedMs || (stage === 'COUNTDOWN' && this.previousStage !== stage && game.elapsedMs === 0)) {
+      this.rhythmStars.reset();
       this.currentJumpMs = -Infinity;
       this.reactionUntilMs = -Infinity;
       this.lastHitCount = 0;
@@ -110,11 +156,30 @@ export class RunnerWorld {
       this.lastFootstepMs = 0;
       this.wasAirborne = false;
     }
-    if (stage === 'RESULTS' && this.previousStage !== stage) this.burst(0, 2, C.runnerZ, 36);
+    if (!presenterMode && stage === 'RESULTS' && this.previousStage !== stage) this.burst(0, 2, C.runnerZ, 36);
     this.previousStage = stage;
     this.elapsedMs = game.elapsedMs;
     const frozen = stage === 'PAUSED' || ((stage === 'COUNTDOWN' || stage === 'PLAYING') && game.paused);
     const dt = frozen ? 0 : Math.min(0.1, Math.max(0, frameDeltaMs / 1000));
+    if (danceMode) this.mirrorCoach.updateDance(danceCueIndex ?? null, dt, frozen);
+    else if (mirrorMode) this.mirrorCoach.update(visibleMirrorState, dt, frozen);
+    else if (sixSevenMode) {
+      this.canvas.dataset.sixSevenDemoHand = this.mirrorCoach.updateMeme(sixSevenPresentation.elapsedMs, dt, frozen);
+    } else {
+      this.mirrorCoach.update(null, dt, frozen);
+      this.canvas.dataset.sixSevenDemoHand = '';
+    }
+    const rhythmVisible = rhythm !== undefined && (
+      stage === 'PLAYING' || stage === 'PAUSED' || (stage === 'COUNTDOWN' && game.paused)
+    );
+    const rhythmState = this.rhythmStars.update(rhythm ?? null, rhythmVisible, frozen, this.starModel);
+    this.canvas.dataset.rhythmVisibleStars = String(rhythmState.visibleStars);
+    this.canvas.dataset.rhythmCollected = String(rhythmState.collected);
+    this.canvas.dataset.rhythmNextId = rhythmState.nextStar ? String(rhythmState.nextStar.id) : '';
+    this.canvas.dataset.rhythmNextAt = rhythmState.nextStar ? String(rhythmState.nextStar.atMs) : '';
+    this.canvas.dataset.rhythmNextLane = rhythmState.nextStar ? String(rhythmState.nextStar.lane) : '';
+    this.canvas.dataset.rhythmNextHeight = rhythmState.nextStar?.height ?? '';
+    this.canvas.dataset.rhythmNextZ = rhythmState.nextZ === null ? '' : rhythmState.nextZ.toFixed(3);
     if (!this.reducedQuality && this.canvas.dataset.environment === 'ready' && frameDeltaMs > 0 && !document.hidden) {
       this.qualityFrames++;
       this.qualityFrameTime += Math.min(100, frameDeltaMs);
@@ -175,24 +240,25 @@ export class RunnerWorld {
     }
 
     this.mixer?.update(dt);
-    this.environment.update(stage, game.elapsedMs, game.durationMs, dt);
-    this.updateTrack(running || stage === 'RESULTS' ? game.elapsedMs : 0);
-    if (this.wasAirborne && !airborne && !frozen) this.burst(this.actor.position.x, .08, C.runnerZ, 12);
+    this.environment.update(stage, presenterMode ? 0 : game.elapsedMs, game.durationMs, presenterMode ? 0 : dt);
+    this.updateTrack(!presenterMode && (running || stage === 'RESULTS') ? game.elapsedMs : 0);
+    if (!presenterMode && this.wasAirborne && !airborne && !frozen) this.burst(this.actor.position.x, .08, C.runnerZ, 12);
     this.wasAirborne = airborne;
-    if (stage === 'PLAYING' && !airborne && game.elapsedMs - this.lastFootstepMs > 330) {
+    if (!presenterMode && stage === 'PLAYING' && !airborne && game.elapsedMs - this.lastFootstepMs > 330) {
       this.burst(this.actor.position.x, .05, C.runnerZ, 2);
       this.lastFootstepMs = game.elapsedMs;
     }
-    this.updateObstacles(stage, game);
-    this.particleBatch.update(dt);
-    if (game.cleared > this.lastSuccessCount) {
+    this.updateObstacles(stage, game, rhythm !== undefined, presenterMode);
+    this.particleBatch.update(presenterMode ? 0 : dt);
+    if (!presenterMode && game.cleared > this.lastSuccessCount) {
       this.burst(0, 0.15, -1.2, 10);
       this.lastSuccessCount = game.cleared;
     }
-    if (gotHit) {
+    if (gotHit && !presenterMode) {
       this.burst(this.actor.position.x, 0.55, C.runnerZ, 7);
       this.lastHitCount = game.collisions;
     }
+    this.updateCoachCamera(presenterMode, dt);
     this.render();
   }
 
@@ -206,14 +272,46 @@ export class RunnerWorld {
     this.composer?.setSize(width, height);
   }
 
+  setDanceMode(enabled: boolean): void {
+    this.danceModeSelected = enabled;
+    if (!enabled && this.dancePresentationActive) {
+      this.dancePresentationActive = false;
+      this.mirrorCoach.setDanceMode(false);
+      this.canvas.dataset.danceVisible = 'false';
+      this.canvas.dataset.danceCueIndex = '';
+    }
+  }
+
+  private updateCoachCamera(visible: boolean, dt: number): void {
+    this.cameraCoachMix = THREE.MathUtils.damp(this.cameraCoachMix, visible ? 1 : 0, 5, dt);
+    const distanceForWidth = 2.7 / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5)) * Math.max(0.28, this.camera.aspect) * 0.88);
+    const distance = Math.max(9.1, distanceForWidth);
+    const coachZ = this.mirrorCoach.group.position.z;
+    const targetY = 1.68;
+    const amount = this.cameraCoachMix;
+    this.camera.position.set(
+      0,
+      THREE.MathUtils.lerp(4.8, targetY + distance * 0.12, amount),
+      THREE.MathUtils.lerp(10.8, coachZ + distance, amount),
+    );
+    this.camera.lookAt(
+      0,
+      THREE.MathUtils.lerp(1.4, targetY, amount),
+      THREE.MathUtils.lerp(-18, coachZ, amount),
+    );
+  }
+
   async selectCharacter(id: CharacterId): Promise<void> {
     await this.ready;
     if (this.destroyed) throw new Error('The runner scene has closed.');
     const model = this.characterModels.get(id);
     if (!model) throw new Error(`The ${id} runner could not load.`);
     const names = new Set(this.characterClips.map(clip => clip.name));
-    this.mountCharacter(model.scene, model.animations.filter(clip => !names.has(clip.name)).concat(this.characterClips));
+    const clips = model.animations.filter(clip => !names.has(clip.name)).concat(this.characterClips);
+    this.mountCharacter(model.scene, clips);
+    this.mirrorCoach.setCharacter(model.scene, clips, id);
     this.canvas.dataset.character = id;
+    this.canvas.dataset.mirrorCoachCharacter = id;
     const name = CHARACTERS.find(character => character.id === id)!.name;
     this.onAssetProgress(`${name} runner + KayKit track + animations loaded`, this.characterClips.map(clip => clip.name));
   }
@@ -222,6 +320,8 @@ export class RunnerWorld {
     this.destroyed = true;
     this.resizeObserver.disconnect();
     this.environment.dispose();
+    this.rhythmStars.dispose();
+    this.mirrorCoach.dispose();
     this.composer?.dispose();
     for (const effect of this.particles) effect.system.dispose();
     this.particleBatch.dispose();
@@ -241,6 +341,7 @@ export class RunnerWorld {
     };
     this.root.traverse(collect);
     for (const model of this.characterModels.values()) model.scene.traverse(collect);
+    this.starModel?.traverse(collect);
     resources.forEach(resource => resource.dispose());
     this.characterModels.clear();
   }
@@ -362,7 +463,9 @@ export class RunnerWorld {
       const importedNames = new Set(importedClips.map(clip => clip.name));
       const clips = characterGltf.animations.filter(clip => !importedNames.has(clip.name)).concat(importedClips);
       this.mountCharacter(characterGltf.scene, clips);
+      this.mirrorCoach.setCharacter(characterGltf.scene, clips, 'rogue');
       this.canvas.dataset.character = 'rogue';
+      this.canvas.dataset.mirrorCoachCharacter = 'rogue';
     }
     else this.makeCharacterFallback();
     const assetsLabel = !characterGltf
@@ -463,8 +566,8 @@ export class RunnerWorld {
     }
   }
 
-  private updateObstacles(stage: Stage, game: GameEngine) {
-    const visible = stage === 'PLAYING' || stage === 'PAUSED' || (stage === 'COUNTDOWN' && game.paused);
+  private updateObstacles(stage: Stage, game: GameEngine, rhythmMode: boolean, mirrorMode: boolean) {
+    const visible = !mirrorMode && (stage === 'PLAYING' || stage === 'PAUSED' || (stage === 'COUNTDOWN' && game.paused));
     const active = new Set<number>();
     for (const wave of game.waves) {
       if (!visible) continue;
@@ -489,7 +592,7 @@ export class RunnerWorld {
             if (child instanceof THREE.Mesh) child.material = this.lowFallback.material;
           });
           group!.add(model);
-          if (this.starModel && wave.id % 3 === 1 && index === 0) {
+          if (this.starModel && !rhythmMode && wave.id % 3 === 1 && index === 0) {
             const star = this.starModel.clone(true);
             star.scale.setScalar(0.43);
             star.position.set(laneX[obstacle.lane + 1], 2.25, 0);

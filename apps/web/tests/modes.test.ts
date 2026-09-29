@@ -3,9 +3,10 @@ import { ModeEngine, GameEngine, configureGameForMode } from '@motion-runner/gam
 import { analysis, pose } from './fixtures';
 
 function oneHandPose(timestampMs: number, hand: 'left' | 'right') {
-  const sample = pose(timestampMs, 0, hand);
-  sample.landmarks[hand === 'left' ? 16 : 15].y = .65;
-  return analysis(timestampMs, { handsDown: false, landmarks: sample.landmarks });
+  const landmarks = pose(timestampMs).landmarks;
+  landmarks[15].y = hand === 'left' ? .48 : .72;
+  landmarks[16].y = hand === 'right' ? .48 : .72;
+  return analysis(timestampMs, { handsDown: true, landmarks });
 }
 
 describe('mode chart lifecycle', () => {
@@ -32,7 +33,7 @@ describe('mode chart lifecycle', () => {
     expect(mode.snapshot(4_000)).toMatchObject({ score: 0, collisions: 1, misses: 1, combo: 0 });
   });
 
-  it('starts Rhythm Run after its two-second preview and repeats the four-beat phrase every two seconds', () => {
+  it('keeps the Rhythm Run compatibility chart aligned with its four-star phrase', () => {
     const mode = new ModeEngine('rhythm-run', 20_000);
 
     expect(mode.chart.slice(0, 5).map(cue => [cue.atMs, cue.move])).toEqual([
@@ -42,36 +43,46 @@ describe('mode chart lifecycle', () => {
       [10_000, 'HANDS_UP_JUMP'],
       [12_000, 'LEAN_LEFT'],
     ]);
+    expect(mode.rhythm?.snapshot(0).stars.slice(0, 4).map(star => [star.atMs, star.lane, star.height])).toEqual([
+      [4_000, -1, 'low'], [6_000, 0, 'high'], [8_000, 1, 'low'], [10_000, 0, 'high'],
+    ]);
     expect(mode.snapshot(1_999).activeCue).toBeNull();
     expect(mode.snapshot(2_000).activeCue).toBeNull();
-    expect(mode.snapshot(3_640).activeCue).toMatchObject({ atMs: 4_000, move: 'LEAN_LEFT' });
+    expect(mode.snapshot(3_760).activeCue).toMatchObject({ atMs: 4_000, move: 'LEAN_LEFT' });
   });
 
-  it.each([2_000, 3_639, 3_640, 4_000, 4_360, 4_361])('only asks for a Rhythm move when it can score at %i ms', elapsedMs => {
+  it.each([3_759, 3_760, 4_000, 4_240, 4_241])('only scores a Rhythm star inside its pickup window at %i ms', elapsedMs => {
     const mode = new ModeEngine('rhythm-run', 20_000);
-    mode.update(0, analysis(0));
     const canMoveNow = mode.snapshot(elapsedMs).activeCue !== null;
-    const events = mode.update(elapsedMs, analysis(elapsedMs, { lane: -1 }));
+    const events = mode.update(elapsedMs, analysis(elapsedMs, { lane: -1 }), undefined, undefined, undefined, {
+      lane: -1, jumpHeight: 0, trackingValid: true,
+    });
     expect(canMoveNow).toBe(events.includes('clear'));
   });
 
   it.each(['hit', 'miss'] as const)('clears Rhythm feedback after a %s so the next move can be shown', outcome => {
     const mode = new ModeEngine('rhythm-run', 20_000);
-    const elapsedMs = outcome === 'hit' ? 4_000 : 4_361;
-    mode.update(elapsedMs, analysis(elapsedMs, { lane: outcome === 'hit' ? -1 : 0 }));
+    const elapsedMs = outcome === 'hit' ? 4_000 : 4_241;
+    mode.update(elapsedMs, analysis(elapsedMs, { lane: outcome === 'hit' ? -1 : 0 }), undefined, undefined, undefined, {
+      lane: outcome === 'hit' ? -1 : 0, jumpHeight: 0, trackingValid: true,
+    });
     expect(mode.snapshot(elapsedMs).feedback).not.toBe('');
     expect(mode.snapshot(5_600)).toMatchObject({ feedback: '', feedbackKind: 'neutral' });
-    expect(mode.snapshot(5_640).activeCue?.move).toBe('HANDS_UP_JUMP');
+    expect(mode.snapshot(5_760).activeCue?.move).toBe('HANDS_UP_JUMP');
   });
 
-  it('misses a Rhythm move after the plus-or-minus 360ms scoring window', () => {
+  it('misses a Rhythm star after the plus-or-minus 240ms pickup window', () => {
     const mode = new ModeEngine('rhythm-run', 20_000);
-    mode.update(4_000, analysis(4_000));
+    mode.update(4_241, analysis(4_241), undefined, undefined, undefined, {
+      lane: -1, jumpHeight: 0, trackingValid: false,
+    });
 
-    const events = mode.update(4_361, analysis(4_361, { lane: -1 }));
+    const events = mode.update(4_500, analysis(4_500, { lane: -1 }), undefined, undefined, undefined, {
+      lane: -1, jumpHeight: 0, trackingValid: true,
+    });
 
     expect(events).not.toContain('clear');
-    expect(mode.snapshot(4_361)).toMatchObject({ score: 0, cleared: 0, misses: 1 });
+    expect(mode.snapshot(4_500)).toMatchObject({ score: 0, cleared: 0, misses: 1 });
   });
 
   it('preserves resolved waves when preparing an already running game after recovery', () => {
@@ -90,10 +101,12 @@ describe('mode chart lifecycle', () => {
     }
     expect(mode.score).toBe(0);
   });
-  it('expires a missed cue after its timing window closes', () => {
+  it('expires a missed star after its pickup window closes', () => {
     const mode = new ModeEngine('rhythm-run', 10_000);
 
-    mode.update(4_361, analysis(4_361));
+    mode.update(4_241, analysis(4_241), undefined, undefined, undefined, {
+      lane: 0, jumpHeight: 0, trackingValid: false,
+    });
 
     expect(mode.chart[0].resolved).toBe(true);
     expect(mode.snapshot(3_301).misses).toBe(1);
@@ -107,7 +120,7 @@ describe('mode chart lifecycle', () => {
       jumpTriggered: true,
       handsUp: true,
       handsDown: false,
-    }));
+    }), undefined, undefined, undefined, { lane: 0, jumpHeight: 1.25, trackingValid: true });
 
     expect(mode.chart[1].resolved).toBe(true);
     expect(mode.snapshot(6_000)).toMatchObject({ misses: 1, cleared: 1, score: 100 });
@@ -124,18 +137,20 @@ describe('mode chart lifecycle', () => {
     expect(mode.snapshot(8_000).misses).toBe(3);
   });
 
-  it('scores one full Six-Seven cycle only after returning to the first hand', () => {
+  it('scores one Six-Seven repetition for each two-hand pair', () => {
     const mode = new ModeEngine('six-seven', 20_000);
     mode.update(0, oneHandPose(0, 'left'));
     mode.update(120, oneHandPose(120, 'left'));
     mode.update(400, oneHandPose(400, 'right'));
     mode.update(520, oneHandPose(520, 'right'));
-    expect(mode.snapshot(520)).toMatchObject({ score: 0, cleared: 0 });
+    expect(mode.snapshot(520)).toMatchObject({ score: 1, cleared: 1, sixSevenCount: 1, playerOneScore: 1, combo: 1 });
 
     mode.update(800, oneHandPose(800, 'left'));
-    const events = mode.update(920, oneHandPose(920, 'left'));
+    mode.update(920, oneHandPose(920, 'left'));
+    mode.update(1_200, oneHandPose(1_200, 'right'));
+    const events = mode.update(1_320, oneHandPose(1_320, 'right'));
 
     expect(events).toContain('clear');
-    expect(mode.snapshot(920)).toMatchObject({ score: 100, cleared: 1, sixSevenCount: 1, combo: 1 });
+    expect(mode.snapshot(1_320)).toMatchObject({ score: 2, cleared: 2, sixSevenCount: 2, playerOneScore: 2, combo: 2 });
   });
 });

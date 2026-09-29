@@ -8,56 +8,89 @@ export interface SixSevenResult {
 }
 
 const required = [11, 12, 15, 16, 23, 24] as const;
-const raiseThreshold = 0.3;
-const releaseThreshold = 0.16;
+const raiseThreshold = 0.12;
+const releaseThreshold = 0.06;
+const aboveShoulderAllowance = 0.2;
+const belowHipAllowance = 0.2;
+const confidenceThreshold = 0.6;
 const confirmMs = 120;
 const minimumSwitchMs = 200;
 const maximumSwitchMs = 2_000;
 
+/** Returns the hand held higher when both wrists are in the waist-to-chest gesture area. */
+export function sixSevenRaisedHand(
+  landmarks: readonly Landmark[],
+  threshold = raiseThreshold,
+): 'left' | 'right' | null {
+  if (!Number.isFinite(threshold) || threshold < 0) return null;
+  if (!required.every(index => {
+    const point = landmarks[index];
+    return point && Number.isFinite(point.x) && Number.isFinite(point.y)
+      && Number.isFinite(point.visibility) && point.visibility >= confidenceThreshold
+      && (point.presence ?? 1) >= confidenceThreshold;
+  })) return null;
+
+  const leftShoulderY = landmarks[11].y;
+  const rightShoulderY = landmarks[12].y;
+  const leftHipY = landmarks[23].y;
+  const rightHipY = landmarks[24].y;
+  const shoulders = (leftShoulderY + rightShoulderY) / 2;
+  const hips = (leftHipY + rightHipY) / 2;
+  const torso = hips - shoulders;
+  if (!Number.isFinite(torso) || torso < 0.12) return null;
+
+  const leftZoneTop = leftShoulderY - torso * aboveShoulderAllowance;
+  const rightZoneTop = rightShoulderY - torso * aboveShoulderAllowance;
+  const leftZoneBottom = leftHipY + torso * belowHipAllowance;
+  const rightZoneBottom = rightHipY + torso * belowHipAllowance;
+  const leftY = landmarks[15].y;
+  const rightY = landmarks[16].y;
+  if (leftY < leftZoneTop || leftY > leftZoneBottom || rightY < rightZoneTop || rightY > rightZoneBottom) return null;
+
+  const leftElevation = leftShoulderY - leftY;
+  const rightElevation = rightShoulderY - rightY;
+  const heightDifference = (leftElevation - rightElevation) / torso;
+  if (heightDifference >= threshold) return 'left';
+  if (heightDifference <= -threshold) return 'right';
+  return null;
+}
+
 export class SixSevenRecognizer {
   count = 0;
   private lastSampleMs = -Infinity;
-  private leftUp = false;
-  private rightUp = false;
+  private raised: 'left' | 'right' | null = null;
   private pending: 'left' | 'right' | null = null;
   private pendingSince = -Infinity;
   private lastPole: 'left' | 'right' | null = null;
-  private cycleStart: 'left' | 'right' | null = null;
-  private switches = 0;
+  private pairProgress: 0 | 1 = 0;
   private lastPoleAt = -Infinity;
-  private feedback = 'Raise one hand, then alternate hands to complete a full cycle.';
+  private feedback = 'Hold both palms between waist and chest; lift one slightly above the other.';
 
   update(timestampMs: number, landmarks: readonly Landmark[], trackingValid = true): SixSevenResult {
     if (!Number.isFinite(timestampMs) || timestampMs <= this.lastSampleMs) return this.result(null, false);
     this.lastSampleMs = timestampMs;
+    if (this.pairProgress === 1 && this.lastPole !== null && timestampMs - this.lastPoleAt > maximumSwitchMs) {
+      this.resetAttempt();
+      this.feedback = 'Too slow — start a new pair. Switch hands within 2 seconds.';
+    }
     if (!trackingValid || !required.every(index => {
       const point = landmarks[index];
       return point && Number.isFinite(point.x) && Number.isFinite(point.y)
-        && point.visibility >= 0.6 && (point.presence ?? 1) >= 0.6;
+        && Number.isFinite(point.visibility) && point.visibility >= confidenceThreshold
+        && (point.presence ?? 1) >= confidenceThreshold;
     })) {
       this.resetAttempt();
       this.feedback = 'Keep both hands, shoulders and hips in view.';
       return this.result(null, false);
     }
 
-    const shoulders = (landmarks[11].y + landmarks[12].y) / 2;
-    const hips = (landmarks[23].y + landmarks[24].y) / 2;
-    const torso = hips - shoulders;
-    if (!Number.isFinite(torso) || torso < 0.12) {
-      this.resetAttempt();
-      this.feedback = 'Step back so your shoulders and hips stay in view.';
-      return this.result(null, false);
-    }
-
-    const leftHeight = (landmarks[11].y - landmarks[15].y) / torso;
-    const rightHeight = (landmarks[12].y - landmarks[16].y) / torso;
-    this.leftUp = this.leftUp ? leftHeight > releaseThreshold : leftHeight >= raiseThreshold;
-    this.rightUp = this.rightUp ? rightHeight > releaseThreshold : rightHeight >= raiseThreshold;
-    const raised = this.leftUp === this.rightUp ? null : this.leftUp ? 'left' : 'right';
+    let raised = sixSevenRaisedHand(landmarks, this.raised ? releaseThreshold : raiseThreshold);
+    if (this.raised && raised !== this.raised) raised = sixSevenRaisedHand(landmarks, raiseThreshold);
+    this.raised = raised;
     if (!raised) {
       this.pending = null;
       this.pendingSince = -Infinity;
-      if (this.leftUp && this.rightUp) this.feedback = 'Alternate your hands instead of raising both together.';
+      this.feedback = 'Hold both palms between waist and chest; lift one slightly above the other.';
       return this.result(null, false);
     }
 
@@ -73,58 +106,43 @@ export class SixSevenRecognizer {
   reset(): void {
     this.count = 0;
     this.lastSampleMs = -Infinity;
-    this.leftUp = false;
-    this.rightUp = false;
-    this.pending = null;
-    this.pendingSince = -Infinity;
     this.resetAttempt();
-    this.feedback = 'Raise one hand, then alternate hands to complete a full cycle.';
+    this.feedback = 'Hold both palms between waist and chest; lift one slightly above the other.';
   }
 
   private acceptPole(timestampMs: number, raised: 'left' | 'right'): SixSevenResult {
     if (this.lastPole === null) {
       this.lastPole = raised;
-      this.cycleStart = raised;
+      this.pairProgress = 1;
       this.lastPoleAt = timestampMs;
-      this.feedback = `Now raise your ${raised === 'left' ? 'right' : 'left'} hand.`;
+      this.feedback = `1/2 · Switch hands and lift the other palm within 2 seconds.`;
       return this.result(raised, false);
     }
     if (raised === this.lastPole) return this.result(raised, false);
 
     const interval = timestampMs - this.lastPoleAt;
     if (interval < minimumSwitchMs) return this.result(raised, false);
-    if (interval > maximumSwitchMs) {
-      this.lastPole = raised;
-      this.cycleStart = raised;
-      this.switches = 0;
-      this.lastPoleAt = timestampMs;
-      this.feedback = `Start alternating again. Raise your ${raised === 'left' ? 'right' : 'left'} hand next.`;
-      return this.result(raised, false);
-    }
 
     this.lastPole = raised;
     this.lastPoleAt = timestampMs;
-    this.switches++;
-    if (this.switches === 2 && raised === this.cycleStart) {
+    if (this.pairProgress === 1) {
       this.count++;
-      this.switches = 0;
-      this.cycleStart = raised;
-      this.feedback = 'Full cycle! Switch hands and repeat.';
+      this.pairProgress = 0;
+      this.feedback = '+1 rep! Start a fresh pair: lift one hand, then the other.';
       return this.result(raised, true);
     }
 
-    this.feedback = 'Good switch. Raise the other hand once more to finish the cycle.';
+    this.pairProgress = 1;
+    this.feedback = '1/2 · Switch hands and lift the other palm within 2 seconds.';
     return this.result(raised, false);
   }
 
   private resetAttempt(): void {
-    this.leftUp = false;
-    this.rightUp = false;
+    this.raised = null;
     this.pending = null;
     this.pendingSince = -Infinity;
     this.lastPole = null;
-    this.cycleStart = null;
-    this.switches = 0;
+    this.pairProgress = 0;
     this.lastPoleAt = -Infinity;
   }
 

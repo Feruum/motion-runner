@@ -588,10 +588,9 @@ export class RaceRoomManager {
   }
 
   private setInput(room: RaceRoom, player: PlayerState, message: Extract<ClientMessage, { type: 'input' }>, now: number): void {
-    if (room.phase !== 'racing') {
-      this.sendError(player.socket!, 'ROOM_LOCKED', 'Race input is only accepted during a race.');
-      return;
-    }
+    // In-flight camera input can arrive after a finish or during a rematch.
+    // Discard it without changing input state or surfacing a player error.
+    if (room.phase !== 'racing') return;
     if (message.seq <= player.lastInputSeq) {
       this.sendError(player.socket!, 'INVALID_INPUT', 'Input sequence numbers must increase.');
       return;

@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
 import { pose } from '../fixtures';
 
-test('Dodge Arena warns, scores a safe lane, and renders results in local dev mode', async ({ page }, testInfo) => {
-  test.setTimeout(55_000);
+test('Dodge Arena completes a full round, recovers tracking and replays', async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(initial => {
@@ -30,12 +30,10 @@ test('Dodge Arena warns, scores a safe lane, and renders results in local dev mo
     Object.defineProperty(window, 'Worker', { value: PoseWorker });
   }, pose(0));
 
-  await page.goto('/?dev=1');
-  const devBadge = await page.locator('#dev-badge').textContent();
-  if (!devBadge?.includes('DEV RUN')) {
-    test.skip(true, 'The short Dodge Arena results flow uses the Vite development duration.');
-  }
+  await page.route('**/api/leaderboard**', route => route.fulfill({ json: { mode: 'classic-run', entries: [], personalBest: null } }));
+  await page.goto('/');
   await page.locator('[data-mode="dodge-arena"]').click();
+  await expect(page.locator('#timer')).toHaveText('01:00');
   await page.getByRole('button', { name: 'Enable camera' }).click();
 
   await expect(page.getByRole('heading', { name: 'Lean into the left lane.' })).toBeVisible({ timeout: 7000 });
@@ -69,9 +67,17 @@ test('Dodge Arena warns, scores a safe lane, and renders results in local dev mo
   await expect(page.locator('body')).toHaveAttribute('data-stage', 'PLAYING', { timeout: 2500 });
   await expect(page.locator('#score')).toHaveText(scoreBeforePause!);
 
-  await expect(page.locator('.stage-results')).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.stage-results')).toBeVisible({ timeout: 70_000 });
   await expect(page.locator('.results-metrics')).toContainText('WAVES CLEARED');
+  await expect(page.locator('#timer')).toHaveText('00:00');
+  const totals = await page.locator('.results-metrics strong').allTextContents();
+  expect.soft(Number(totals[1]) + Number(totals[2]), 'All 24 waves must resolve').toBe(24);
   await page.screenshot({ path: testInfo.outputPath('dodge-results.png') });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator('#replay-run')).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('dodge-mobile.png') });
+  await page.setViewportSize({ width: 1440, height: 1000 });
 
   await setPose(page, 0, 'up');
   await expect(page.locator('.replay-instruction')).toContainText('Gesture accepted', { timeout: 2500 });

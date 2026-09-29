@@ -8,7 +8,7 @@ import {
   MirrorChallengeRuntime,
 } from '../../../packages/game/src/core/mirror';
 
-type PoseName = 'neutral' | 'lean-left' | 'lean-right' | 'left-up' | 'right-up' | 'both-up' | 'arms-out' | 'arms-out-too-far' | 'left-up-right-too-low' | 'left-up-too-high' | 'left-bent-out' | 'right-bent-out' | 'left-up-position-edge' | 'left-up-position-outside' | 'left-up-angle-edge';
+type PoseName = 'neutral' | 'lean-left' | 'lean-left-wide-arms' | 'lean-right' | 'left-up' | 'left-up-diagonal' | 'left-up-too-low' | 'left-up-too-wide' | 'right-up' | 'right-up-diagonal' | 'both-up' | 'arms-out' | 'arms-out-long-reach' | 'arms-out-too-far' | 'left-up-right-too-low' | 'left-up-too-high' | 'left-bent-out' | 'right-bent-out' | 'left-up-position-edge' | 'left-up-position-outside' | 'left-up-angle-edge';
 
 function pose(name: PoseName): Landmark[] {
   const landmarks: Landmark[] = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, z: 0, visibility: 0.99, presence: 0.99 }));
@@ -21,25 +21,46 @@ function pose(name: PoseName): Landmark[] {
   set(23, 0.59, 0.76); set(24, 0.41, 0.76);
 
   if (name === 'lean-left') { set(11, 0.68, 0.38); set(12, 0.44, 0.38); }
+  if (name === 'lean-left-wide-arms') {
+    set(11, 0.68, 0.38); set(12, 0.44, 0.38);
+    set(13, 0.80, 0.50); set(15, 0.86, 0.70);
+    set(14, 0.20, 0.50); set(16, 0.14, 0.70);
+  }
   if (name === 'lean-right') { set(11, 0.56, 0.38); set(12, 0.32, 0.38); }
   if (name === 'left-up' || name === 'both-up') { set(13, 0.62, 0.275); set(15, 0.62, 0.17); }
+  if (name === 'left-up-diagonal') {
+    set(13, 0.762, 0.202); set(15, 0.903, 0.024);
+    set(14, 0.34, 0.57); set(16, 0.30, 0.83);
+  }
+  if (name === 'left-up-too-low') { set(13, 0.62, 0.34); set(15, 0.62, 0.304); }
+  if (name === 'left-up-too-wide') { set(13, 0.82, 0.275); set(15, 1.02, 0.17); }
   if (name === 'right-up' || name === 'both-up') { set(14, 0.38, 0.275); set(16, 0.38, 0.17); }
+  if (name === 'right-up-diagonal') {
+    set(14, 0.238, 0.202); set(16, 0.097, 0.024);
+    set(13, 0.66, 0.57); set(15, 0.70, 0.83);
+  }
   if (name === 'left-up-position-edge') { set(13, 0.658, 0.3135); set(15, 0.696, 0.247); }
   if (name === 'left-up-position-outside') { set(13, 0.62, 0.3249); set(15, 0.62, 0.2698); }
   if (name === 'left-up-angle-edge') { set(13, 0.638, 0.275); set(15, 0.62, 0.17); }
-  if (name === 'left-up-too-high') { set(13, 0.62, 0.275); set(15, 0.62, 0.05); }
+  if (name === 'left-up-too-high') { set(13, 0.62, 0.275); set(15, 0.62, -0.23); }
   if (name === 'left-up-right-too-low') {
     set(13, 0.62, 0.275); set(15, 0.62, 0.17);
-    set(14, 0.38, 0.61); set(16, 0.38, 0.84);
+    set(14, 0.38, 0.61); set(16, 0.38, 0.96);
   }
   if (name === 'arms-out') {
     set(13, 0.772, 0.38); set(15, 0.924, 0.38);
     set(14, 0.228, 0.38); set(16, 0.076, 0.38);
   }
+  if (name === 'arms-out-long-reach') {
+    set(11, 0.58, 0.38); set(12, 0.42, 0.38);
+    set(23, 0.59, 0.67); set(24, 0.41, 0.67);
+    set(13, 0.754, 0.38); set(15, 0.928, 0.38);
+    set(14, 0.246, 0.38); set(16, 0.072, 0.38);
+  }
   if (name === 'arms-out-too-far') {
     set(23, 0.59, 0.65); set(24, 0.41, 0.65);
-    set(13, 0.81, 0.38); set(15, 1.0, 0.38);
-    set(14, 0.19, 0.38); set(16, 0.0, 0.38);
+    set(13, 0.81, 0.38); set(15, 1.05, 0.38);
+    set(14, 0.19, 0.38); set(16, -0.05, 0.38);
   }
   if (name === 'left-bent-out') { set(13, 0.80, 0.43); set(15, 0.924, 0.38); set(14, 0.228, 0.38); set(16, 0.076, 0.38); }
   if (name === 'right-bent-out') { set(14, 0.20, 0.43); set(16, 0.076, 0.38); set(13, 0.772, 0.38); set(15, 0.924, 0.38); }
@@ -86,11 +107,17 @@ describe('Mirror Challenge runtime', () => {
     expect(runtime.update(60_000, pose('neutral'), true)).toMatchObject({ taskPhase: 'complete', challengeCompleted: true, remainingMs: 0 });
   });
 
-  it('applies the planned 20-degree angle and 0.25-torso wrist tolerances', () => {
+  it('uses bounded pose regions with the planned elbow-angle and torso-lean thresholds', () => {
     const requirements = MIRROR_ASSIGNMENTS.flatMap(task => task.elements.flatMap(element => element.requirements));
     expect(requirements.filter(requirement => requirement.kind === 'elbow-angle').every(requirement => requirement.toleranceDegrees === 20)).toBe(true);
-    expect(requirements.filter(requirement => requirement.kind === 'wrist-position').every(requirement => requirement.toleranceTorso === 0.25)).toBe(true);
     expect(requirements.filter(requirement => requirement.kind === 'torso-lean').every(requirement => requirement.activateAt === 0.22 && requirement.releaseAt === 0.12)).toBe(true);
+
+    const raisedLeft = MIRROR_ASSIGNMENTS[2].elements[0].requirements.find(requirement => requirement.kind === 'wrist-region' && requirement.side === 'left');
+    expect(raisedLeft).toMatchObject({ minOutward: -0.15, maxOutward: 0.9, minBelowShoulder: -1.4, maxBelowShoulder: -0.3 });
+    const loweredRight = MIRROR_ASSIGNMENTS[2].elements[0].requirements.find(requirement => requirement.kind === 'wrist-region' && requirement.side === 'right');
+    expect(loweredRight).toMatchObject({ minOutward: -0.15, maxOutward: 0.75, minBelowShoulder: 0.15, maxBelowShoulder: 1.4 });
+    const extendedLeft = MIRROR_ASSIGNMENTS[5].elements[0].requirements.find(requirement => requirement.kind === 'wrist-region' && requirement.side === 'left');
+    expect(extendedLeft).toMatchObject({ minOutward: 0.55, maxOutward: 1.4, minBelowShoulder: -0.25, maxBelowShoulder: 0.25 });
 
     expect(hold(new MirrorChallengeRuntime(), 'left-up-position-edge', 16_500, 17_000)).toMatchObject({ completedTaskCount: 1, success: true });
     expect(hold(new MirrorChallengeRuntime(), 'left-up-angle-edge', 16_500, 17_000)).toMatchObject({ completedTaskCount: 1, success: true });
@@ -103,6 +130,37 @@ describe('Mirror Challenge runtime', () => {
     const completed = runtime.update(2_000, pose('lean-left'), true);
     expect(completed).toMatchObject({ completedTaskCount: 1, score: MIRROR_TASK_SCORE, success: true });
     expect(runtime.update(2_050, pose('lean-left'), true)).toMatchObject({ completedTaskCount: 1, score: MIRROR_TASK_SCORE, success: false });
+  });
+
+  it('scores a held lean while the player keeps their relaxed arms naturally away from the shoulders', () => {
+    const runtime = new MirrorChallengeRuntime();
+    expect(hold(runtime, 'lean-left-wide-arms', 1_500, 2_000)).toMatchObject({
+      completedTaskCount: 1,
+      score: MIRROR_TASK_SCORE,
+      success: true,
+    });
+  });
+
+  it('scores a straight diagonal hand raise while allowing the other arm to hang naturally', () => {
+    expect(hold(new MirrorChallengeRuntime(), 'left-up-diagonal', 16_500, 17_000)).toMatchObject({
+      completedTaskCount: 1, score: MIRROR_TASK_SCORE, success: true,
+    });
+    expect(hold(new MirrorChallengeRuntime(), 'right-up-diagonal', 24_000, 24_500)).toMatchObject({
+      completedTaskCount: 1, score: MIRROR_TASK_SCORE, success: true,
+    });
+  });
+
+  it('still rejects a wrong-side or insufficiently raised hand', () => {
+    expect(hold(new MirrorChallengeRuntime(), 'right-up', 16_500, 17_000)).toMatchObject({ completedTaskCount: 0, success: false });
+    expect(hold(new MirrorChallengeRuntime(), 'left-up-too-low', 16_500, 17_000)).toMatchObject({ completedTaskCount: 0, success: false });
+    expect(hold(new MirrorChallengeRuntime(), 'left-up-too-wide', 16_500, 17_000)).toMatchObject({ completedTaskCount: 0, success: false });
+  });
+
+  it('scores a straight arms-out pose for longer arm proportions but keeps the reach bounded', () => {
+    expect(hold(new MirrorChallengeRuntime(), 'arms-out-long-reach', 39_000, 39_500)).toMatchObject({
+      completedTaskCount: 1, score: MIRROR_TASK_SCORE, success: true,
+    });
+    expect(hold(new MirrorChallengeRuntime(), 'arms-out-too-far', 39_000, 39_500)).toMatchObject({ completedTaskCount: 0, success: false });
   });
 
   it('keeps normalized wrist poses stable when the player appears smaller in frame', () => {

@@ -274,6 +274,10 @@ function frame(now: number) {
   if (now-lastUiAt>=80) { renderUi(now); lastUiAt=now; }
   frameHandle=requestAnimationFrame(frame);
 }
-document.addEventListener('visibilitychange',()=>{ if(document.hidden){jumpPending=false;connection?.input(0,false,false);} });
+document.addEventListener('visibilitychange',()=>{
+  if (!document.hidden) return;
+  jumpPending=false;
+  if (room?.phase==='racing') connection?.input(0,false,false);
+});
 window.addEventListener('pagehide',()=>{cancelAnimationFrame(frameHandle);tracker?.stop();connection?.close();world?.destroy();});
 renderUi(performance.now()); frameHandle=requestAnimationFrame(frame);

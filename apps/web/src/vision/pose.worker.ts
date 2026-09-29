@@ -10,7 +10,7 @@ import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision';
 import { poseResultToSample } from './pose-sample';
 
 type WorkerRequest =
-  | { type: 'init'; wasmUrl: string; modelUrl: string; numPoses?: 1 | 2 }
+  | { type: 'init'; wasmUrl: string; modelUrl: string; numPoses?: 1 | 2; delegate?: 'GPU' | 'CPU' }
   | { type: 'frame'; bitmap: ImageBitmap; timestampMs: number }
   | { type: 'dispose' };
 
@@ -26,19 +26,22 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   if (message.type === 'init') {
     try {
       const vision = await FilesetResolver.forVisionTasks(message.wasmUrl, true);
+      let delegate: 'GPU' | 'CPU' = message.delegate ?? 'GPU';
       try {
         landmarker = await PoseLandmarker.createFromOptions(vision, {
-          baseOptions: { modelAssetPath: message.modelUrl, delegate: 'GPU' },
+          baseOptions: { modelAssetPath: message.modelUrl, delegate },
           runningMode: 'VIDEO', numPoses: message.numPoses ?? 1, outputSegmentationMasks: false,
         });
       } catch (gpuError) {
+        if (delegate === 'CPU') throw gpuError;
         console.warn('GPU pose delegate unavailable; using CPU.', gpuError);
+        delegate = 'CPU';
         landmarker = await PoseLandmarker.createFromOptions(vision, {
           baseOptions: { modelAssetPath: message.modelUrl, delegate: 'CPU' },
           runningMode: 'VIDEO', numPoses: message.numPoses ?? 1, outputSegmentationMasks: false,
         });
       }
-      self.postMessage({ type: 'ready' });
+      self.postMessage({ type: 'ready', delegate });
     } catch (error) {
       self.postMessage({ type: 'error', message: error instanceof Error ? error.message : 'The pose model could not be loaded.' });
     }

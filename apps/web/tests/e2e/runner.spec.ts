@@ -1,6 +1,25 @@
 import { expect, test } from '@playwright/test';
 
+test('the release picker exposes every completed game mode', async ({ page }) => {
+  await page.goto('.');
+  const modes = page.locator('.mode-card');
+  await expect(modes).toHaveCount(9);
+  for (const mode of ['classic-run', 'rhythm-run', 'dodge-arena', 'beat-blaster', 'mirror-challenge', 'dance-party', 'dance-duo', 'six-seven', 'party-race']) {
+    await expect(page.locator(`.mode-card[data-mode="${mode}"]`)).toBeVisible();
+  }
+  await expect(page.locator('.mode-card[data-mode="classic-run"]')).toHaveAttribute('aria-pressed', 'true');
+
+  await page.getByRole('button', { name: /Rhythm Run/ }).click();
+
+  await expect(page.locator('.mode-card[data-mode="rhythm-run"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('body')).toHaveAttribute('data-selected-mode', 'rhythm-run');
+  await page.reload();
+  await expect(page.locator('.mode-card[data-mode="rhythm-run"]')).toHaveAttribute('aria-pressed', 'true');
+});
+
 test('presents the complete starting experience and adapts to a narrow display', async ({ page }) => {
+  // This UI smoke test runs against the static preview, independently of the API process.
+  await page.route('**/api/leaderboard**', route => route.fulfill({ json: { mode: 'classic-run', entries: [], personalBest: null } }));
   const runtimeErrors: string[] = [];
   const animationBindingWarnings: string[] = [];
   page.on('pageerror', error => runtimeErrors.push(error.message));
@@ -16,7 +35,7 @@ test('presents the complete starting experience and adapts to a narrow display',
   await expect(page.locator('body')).toHaveAttribute('data-runner-assets', 'Rogue runner + KayKit track + animations loaded');
   await expect(page.locator('body')).toHaveAttribute('data-runner-animations', 'Idle,Running_A,Jump_Full_Short,Hit_A,Cheer');
   await expect(page.locator('.privacy-label')).toHaveText('LOCAL ONLY');
-  await expect(page.getByText('Only your best score is saved.', { exact: false })).toBeVisible();
+  await expect(page.getByText('Only your runner name and best score are saved.', { exact: false })).toBeVisible();
   await expect(page.getByText('Lean left')).toBeVisible();
   await expect(page.getByText('Lean right')).toBeVisible();
   await expect(page.getByText('Hands up')).toBeVisible();
@@ -80,5 +99,5 @@ test('loads the local camera model, WASM and KayKit models from the production b
   await expect(page.locator('body')).toHaveAttribute('data-runner-animations', 'Idle,Running_A,Jump_Full_Short,Hit_A,Cheer');
   for (const [path, status] of assetResponses) expect(status, `${path} should be served`).toBe(200);
   await expect(page.getByText('BODY TRACKED')).not.toBeVisible();
-  await expect(page.locator('#camera-status')).toContainText('STEP BACK INTO FRAME');
+  await expect(page.locator('#camera-status')).toContainText('SHOW HEAD, SHOULDERS AND HIPS');
 });

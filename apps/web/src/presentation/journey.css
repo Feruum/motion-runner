@@ -1,0 +1,76 @@
+/* Keep the landscape bright, with contrast concentrated behind instructions. */
+.scene-vignette { background: linear-gradient(180deg, #16332b22, transparent 20%, transparent 82%, #15332640); }
+.stage-overlay { background: linear-gradient(90deg, #173d34d9, #173d34ad 27%, #173d3450 43%, transparent 64%); }
+.stage-overlay .overlay-inner { text-shadow: 0 1px 8px #102c2d55; }
+.stage-countdown { background: radial-gradient(ellipse at center, #183a3544, transparent 60%); }
+.stage-paused { background: linear-gradient(90deg, #173d34e8, #173d3499 40%, transparent 75%); }
+.game-wordmark { padding: 8px 10px; border-radius: 12px; background: #183d345e; backdrop-filter: blur(8px); }
+.lane-guide { display: none; }
+.distance-track { height: 4px; background: #ffffff25; }
+.distance-track span { background: #f5d18d; }
+.world-caption { font-size: 9px; height: 36px; color: #fff4db; }
+.hud-chip { background: #193b35bd; border-color: #fff4d636; }
+.score-chip { background: #534934bf; }
+.overlay-inner p { color: #f5f5e7; }
+.overlay-foot { color: #e6ecdaab; }
+
+/* During a run, use the viewport for the course; keep tracking visible. */
+body.run-focus { overflow: hidden; }
+.run-focus .experience { position: fixed; inset: 0; z-index: 30; display: block; background: #badee0; }
+.run-focus .game-panel { width: 100%; height: 100dvh; min-height: 0; max-height: none; border-radius: 0; }
+.run-focus .side-rail { position: absolute; z-index: 5; top: 108px; right: 20px; width: 222px; display: block; }
+.run-focus .camera-card { padding: 9px; border-color: #fff5dc40; background: #f6f4e9eb; box-shadow: 0 10px 30px #183c3520; }
+.run-focus .camera-view { height: 150px; }
+.run-focus .frame-hint { display: none; }
+.run-focus .coach-card, .run-focus .pipeline-card, .run-focus .privacy-foot { display: none; }
+body.run-focus:not([data-stage='RESULTS']) .leaderboard-card { display: none; }
+.run-focus .leaderboard-card { margin-top: 9px; padding: 9px 10px 8px; }
+.run-focus .leaderboard-heading h2 { font-size: 15px; }
+.run-focus .leaderboard-row { min-height: 28px; }
+.run-focus .leaderboard-note { font-size: 6px; }
+.run-focus .game-topline { inset: 22px 24px auto; }
+.run-focus .hud-chip { min-width: 105px; padding: 10px 16px; }
+.run-focus .hud-chip strong { font-size: 32px; }
+.run-focus .hud-label { font-size: 9px; }
+.run-focus .stage-overlay { padding-left: 7vw; }
+.run-focus .overlay-inner { width: min(460px, 44%); }
+.run-focus .overlay-inner h2 { font-size: clamp(36px, 4vw, 62px); }
+.run-focus .overlay-inner p { font-size: clamp(15px, 1.5vw, 20px); }
+.run-focus .stage-countdown .overlay-inner { width: 100%; }
+.run-focus .stage-countdown h2 { max-width: none; font-size: clamp(100px, 16vw, 180px); }
+.run-focus .correction-toast { top: 100px; font-size: 18px; max-width: calc(100% - 530px); }
+.run-focus .world-caption { height: 42px; padding-inline: 24px; }
+.run-focus .results-metrics { width: 100%; }
+.run-focus .results-metrics strong { font-size: 28px; }
+.run-focus .results-metrics span { font-size: 8px; }
+.mode-cue[hidden] { display: none; }
+.run-focus .mode-cue { width: min(620px, calc(100% - 32px)); padding: 12px 16px; }
+.run-focus .mode-cue-copy small { font-size: 9px; }
+.run-focus .mode-cue-copy strong { font-size: clamp(13px, 1.3vw, 18px); white-space: normal; }
+.mode-cue[data-tone='jump'] { border-color: #7ff5d1; background: #174a3eeb; }
+.mode-cue[data-tone='hit'] { border-color: #ffb0a0; background: #682f29ed; }
+.mode-cue[data-tone='warning'] .mode-cue-icon { color: #ffd49b; }
+.stage-results .replay-instruction { margin-top: 18px; font-size: clamp(13px, 1.2vw, 17px); }
+.stage-results .hold-track { margin-bottom: 14px; }
+.primary-action:disabled { opacity: .5; cursor: not-allowed; }
+.run-focus .stage-results { overflow-y: auto; align-items: flex-start; padding-top: 110px; padding-bottom: 95px; }
+.run-focus .stage-results .overlay-inner h2 { font-size: clamp(32px, 3.4vw, 52px); }
+.run-focus .camera-status { font-size: 7px; }
+@media (max-width: 800px) {
+  .stage-overlay { background: linear-gradient(90deg, #173d34df, #173d3485 60%, transparent); }
+  .run-focus .side-rail { width: 155px; right: 12px; top: 88px; }
+  .run-focus .camera-view { height: 110px; }
+  .run-focus .privacy-label { display: none; }
+  .run-focus .game-topline { inset: 12px 12px auto; }
+  .run-focus .hud-chip { min-width: 70px; padding: 8px; }
+  .run-focus .hud-chip strong { font-size: 23px; }
+  .run-focus .overlay-inner { width: min(390px, 75%); }
+  .run-focus .correction-toast { top: auto; bottom: 55px; max-width: 90%; font-size: 15px; }
+  .world-caption { font-size: 7px; letter-spacing: .08em; }
+  .run-focus .stage-results .overlay-inner { width: calc(100% - 12px); }
+  .run-focus[data-stage='RESULTS'] .side-rail { display: none; }
+  .run-focus .stage-results { padding-left: 20px; padding-right: 20px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage-overlay, .distance-track span { transition: none; }
+}

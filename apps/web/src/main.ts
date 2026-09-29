@@ -5,4 +5,7 @@ import '@fontsource/dm-sans/400.css';
 import '@fontsource/dm-sans/500.css';
 import '@fontsource/dm-sans/600.css';
 import './styles.css';
-import './app';
+import './presentation/journey.css';
+const route = new URLSearchParams(location.search);
+if (route.get('mode') === 'party-race' || route.has('room')) void import('./party-race');
+else void import('./app');
